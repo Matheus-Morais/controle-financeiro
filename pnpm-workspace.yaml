@@ -2,3 +2,11 @@ onlyBuiltDependencies:
   - esbuild
   - sharp
   - unrs-resolver
+minimumReleaseAgeExclude:
+  - '@supabase/auth-js@2.110.3'
+  - '@supabase/functions-js@2.110.3'
+  - '@supabase/postgrest-js@2.110.3'
+  - '@supabase/realtime-js@2.110.3'
+  - '@supabase/ssr@0.12.1'
+  - '@supabase/storage-js@2.110.3'
+  - '@supabase/supabase-js@2.110.3'
