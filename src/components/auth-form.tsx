@@ -31,6 +31,12 @@ export function AuthForm({
 
   return (
     <form action={formAction} className="flex w-full max-w-sm flex-col gap-4">
+      <div className="mb-2 flex flex-col items-center gap-2">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.svg" alt="" width={72} height={72} className="rounded-2xl" />
+        <span className="text-lg font-semibold">Controle Financeiro</span>
+      </div>
+
       <h1 className="text-2xl font-bold">{isSignup ? "Criar conta" : "Entrar"}</h1>
 
       {isSignup && (
