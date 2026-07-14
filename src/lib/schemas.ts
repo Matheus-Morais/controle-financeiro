@@ -46,3 +46,25 @@ export function parseSource(source: string): { kind: "card" | "account"; id: str
   const [kind, id] = source.split(":");
   return { kind: kind as "card" | "account", id };
 }
+
+export const incomeSchema = z.object({
+  description: z.string().trim().min(1, "Informe uma descrição").max(120),
+  amount_cents: z.coerce.number().int().positive("Valor deve ser maior que zero"),
+  receipt_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida"),
+  is_recurring: z.coerce.boolean().default(false),
+  recurring_day: z.coerce.number().int().min(1).max(31).optional(),
+});
+
+export type IncomeInput = z.infer<typeof incomeSchema>;
+
+export const recurringSchema = z.object({
+  description: z.string().trim().min(1, "Informe uma descrição").max(120),
+  amount_cents: z.coerce.number().int().positive("Valor deve ser maior que zero"),
+  source: z.string().regex(/^(card|account):[0-9a-f-]{36}$/, "Selecione a origem"),
+  category_id: z.string().uuid().optional().or(z.literal("")),
+  billing_day: dayOfMonth,
+  /** Mês de início no formato `YYYY-MM`. */
+  start_month: z.string().regex(/^\d{4}-\d{2}$/, "Informe o mês de início"),
+});
+
+export type RecurringInput = z.infer<typeof recurringSchema>;

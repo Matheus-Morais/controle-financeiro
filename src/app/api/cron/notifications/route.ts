@@ -1,6 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendPush, type PushPayload } from "@/lib/push-server";
+import {
+  materializeRecurringExpenses,
+  materializeRecurringIncomes,
+} from "@/lib/recurring";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -28,6 +32,12 @@ export async function GET(request: NextRequest) {
 
   for (const p of profiles ?? []) {
     const { year, month, day, weekday, isoDate, monthStart } = localCalendar(now, p.timezone);
+
+    // ── Virada de mês (dia 1): materializa recorrentes ──────────────────
+    if (day === 1) {
+      await materializeRecurringExpenses(supabase, p.user_id, monthStart);
+      await materializeRecurringIncomes(supabase, p.user_id, monthStart);
+    }
 
     // ── Lembrete mensal (dia 1) ──────────────────────────────────────────
     if (p.monthly_reminder_enabled && day === 1) {
