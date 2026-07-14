@@ -1,0 +1,16 @@
+# Configuração do Supabase CLI (supabase start / db push).
+# Docs: https://supabase.com/docs/guides/cli/config
+project_id = "controle-financeiro"
+
+[db]
+port = 54322
+major_version = 15
+
+[auth]
+enable_signup = true
+# Para começar rápido em dev, e-mail sem confirmação. Em produção, ative a confirmação.
+[auth.email]
+enable_confirmations = false
+
+[studio]
+port = 54323
