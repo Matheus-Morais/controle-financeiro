@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 
 type Action = (prev: unknown, formData: FormData) => Promise<{ error?: string } | undefined>;
 
@@ -25,7 +26,7 @@ export function AuthForm({
   mode: "login" | "signup";
   action: Action;
 }) {
-  const [state, formAction] = useFormState(action, undefined);
+  const [state, formAction] = useActionState(action, undefined);
   const isSignup = mode === "signup";
 
   return (

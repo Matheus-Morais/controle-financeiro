@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState, useMemo, useState } from "react";
+import { useFormStatus } from "react-dom";
 import { parseBRLToCents } from "@/lib/money";
 
 type ActionState = { error?: string } | undefined;
@@ -38,7 +38,7 @@ export function ExpenseForm({
   categories: Option[];
   today: string;
 }) {
-  const [state, formAction] = useFormState(action, undefined);
+  const [state, formAction] = useActionState(action, undefined);
   const [amount, setAmount] = useState("");
   const [kind, setKind] = useState<"single" | "installment">("single");
 

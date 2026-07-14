@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import type { Card } from "@/types/database";
 
 type ActionState = { error?: string } | undefined;
@@ -22,7 +23,7 @@ function SubmitButton() {
 }
 
 export function CardForm({ action, card }: { action: Action; card?: Card }) {
-  const [state, formAction] = useFormState(action, undefined);
+  const [state, formAction] = useActionState(action, undefined);
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
