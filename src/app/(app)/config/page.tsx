@@ -2,6 +2,8 @@ import { LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/(auth)/actions";
 import { NotificationSettings } from "@/components/notification-settings";
+import { InstallPrompt } from "@/components/install-prompt";
+import { TimezoneSelect } from "@/components/timezone-select";
 import { PhasePlaceholder } from "@/components/phase-placeholder";
 
 export default async function ConfigPage() {
@@ -11,7 +13,7 @@ export default async function ConfigPage() {
   } = await supabase.auth.getUser();
   const { data: profile } = await supabase
     .from("profiles")
-    .select("display_name, weekly_reminder_day, weekly_reminder_enabled, monthly_reminder_enabled")
+    .select("display_name, timezone, weekly_reminder_day, weekly_reminder_enabled, monthly_reminder_enabled")
     .single();
 
   return (
@@ -24,11 +26,15 @@ export default async function ConfigPage() {
         <p className="text-sm text-neutral-500">{user?.email}</p>
       </section>
 
+      <InstallPrompt />
+
       <NotificationSettings
         initialWeeklyDay={profile?.weekly_reminder_day ?? 1}
         initialWeeklyEnabled={profile?.weekly_reminder_enabled ?? true}
         initialMonthlyEnabled={profile?.monthly_reminder_enabled ?? true}
       />
+
+      <TimezoneSelect initial={profile?.timezone ?? "America/Sao_Paulo"} />
 
       <PhasePlaceholder title="Exportar dados (CSV)" phase="Fase 4 — Extras" />
 

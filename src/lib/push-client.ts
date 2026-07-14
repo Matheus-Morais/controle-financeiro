@@ -40,6 +40,29 @@ export async function subscribeToPush(): Promise<{
     applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource,
   });
 
+  return serialize(sub);
+}
+
+/** Retorna a subscription já existente neste dispositivo, se houver. */
+export async function getExistingSubscription(): Promise<{ endpoint: string } | null> {
+  if (!pushSupported()) return null;
+  const registration = await navigator.serviceWorker.ready;
+  const sub = await registration.pushManager.getSubscription();
+  return sub ? { endpoint: sub.endpoint } : null;
+}
+
+/** Cancela a assinatura de push neste dispositivo. Retorna o endpoint removido. */
+export async function unsubscribeFromPush(): Promise<string | null> {
+  if (!pushSupported()) return null;
+  const registration = await navigator.serviceWorker.ready;
+  const sub = await registration.pushManager.getSubscription();
+  if (!sub) return null;
+  const endpoint = sub.endpoint;
+  await sub.unsubscribe();
+  return endpoint;
+}
+
+function serialize(sub: PushSubscription) {
   const json = sub.toJSON();
   return {
     endpoint: sub.endpoint,
