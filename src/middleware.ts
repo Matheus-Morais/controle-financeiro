@@ -35,7 +35,9 @@ export async function middleware(request: NextRequest) {
   const isPublic =
     pathname.startsWith("/login") ||
     pathname.startsWith("/signup") ||
-    pathname.startsWith("/auth");
+    pathname.startsWith("/auth") ||
+    pathname.startsWith("/esqueci-senha") ||
+    pathname.startsWith("/redefinir-senha");
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();

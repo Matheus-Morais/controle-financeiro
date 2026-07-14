@@ -74,6 +74,12 @@ export function AuthForm({
         />
       </label>
 
+      {!isSignup && (
+        <Link href="/esqueci-senha" className="-mt-2 text-right text-sm text-brand">
+          Esqueci minha senha
+        </Link>
+      )}
+
       {state?.error && <p className="text-sm text-red-600">{state.error}</p>}
 
       <SubmitButton label={isSignup ? "Criar conta" : "Entrar"} />
