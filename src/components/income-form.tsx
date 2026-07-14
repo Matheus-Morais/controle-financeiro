@@ -20,10 +20,13 @@ function SubmitButton() {
   );
 }
 
+type RecurringMode = "day_of_month" | "nth_business_day";
+
 export function IncomeForm({ action, today }: { action: Action; today: string }) {
   const [state, formAction] = useActionState(action, undefined);
   const [amount, setAmount] = useState("");
   const [recurring, setRecurring] = useState(false);
+  const [mode, setMode] = useState<RecurringMode>("day_of_month");
   const cents = useMemo(() => parseBRLToCents(amount) ?? 0, [amount]);
 
   return (
@@ -74,17 +77,63 @@ export function IncomeForm({ action, today }: { action: Action; today: string })
       </label>
 
       {recurring && (
-        <label className="flex flex-col gap-1 text-sm">
-          Dia do recebimento (1–31)
-          <input
-            name="recurring_day"
-            type="number"
-            min={1}
-            max={31}
-            placeholder="Ex.: 5"
-            className="rounded-xl border border-neutral-300 bg-white px-3 py-3 dark:border-neutral-700 dark:bg-neutral-900"
-          />
-        </label>
+        <>
+          <input type="hidden" name="recurring_mode" value={mode} />
+          <fieldset className="flex flex-col gap-2 text-sm">
+            Quando recebe todo mês
+            <div className="flex gap-2">
+              {(
+                [
+                  ["day_of_month", "Dia fixo"],
+                  ["nth_business_day", "Dia útil"],
+                ] as const
+              ).map(([value, label]) => (
+                <label key={value} className="flex-1">
+                  <input
+                    type="radio"
+                    name="recurring_mode_radio"
+                    value={value}
+                    checked={mode === value}
+                    onChange={() => setMode(value)}
+                    className="peer sr-only"
+                  />
+                  <span className="block cursor-pointer rounded-xl border border-neutral-300 py-2.5 text-center peer-checked:border-brand peer-checked:bg-brand/10 peer-checked:font-semibold peer-checked:text-brand dark:border-neutral-700">
+                    {label}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          {mode === "day_of_month" ? (
+            <label className="flex flex-col gap-1 text-sm">
+              Dia do recebimento (1–31)
+              <input
+                name="recurring_day"
+                type="number"
+                min={1}
+                max={31}
+                placeholder="Ex.: 5"
+                className="rounded-xl border border-neutral-300 bg-white px-3 py-3 dark:border-neutral-700 dark:bg-neutral-900"
+              />
+            </label>
+          ) : (
+            <label className="flex flex-col gap-1 text-sm">
+              Qual dia útil (ex.: 5 = 5º dia útil)
+              <input
+                name="recurring_business_day"
+                type="number"
+                min={1}
+                max={23}
+                defaultValue={5}
+                className="rounded-xl border border-neutral-300 bg-white px-3 py-3 dark:border-neutral-700 dark:bg-neutral-900"
+              />
+              <span className="text-xs text-neutral-500">
+                Calculado todo mês, pulando fins de semana e feriados nacionais.
+              </span>
+            </label>
+          )}
+        </>
       )}
 
       {state?.error && <p className="text-sm text-red-600">{state.error}</p>}
