@@ -1,10 +1,9 @@
-import { LogOut } from "lucide-react";
+import { Download, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/(auth)/actions";
 import { NotificationSettings } from "@/components/notification-settings";
 import { InstallPrompt } from "@/components/install-prompt";
 import { TimezoneSelect } from "@/components/timezone-select";
-import { PhasePlaceholder } from "@/components/phase-placeholder";
 
 export default async function ConfigPage() {
   const supabase = await createClient();
@@ -36,7 +35,14 @@ export default async function ConfigPage() {
 
       <TimezoneSelect initial={profile?.timezone ?? "America/Sao_Paulo"} />
 
-      <PhasePlaceholder title="Exportar dados (CSV)" phase="Fase 4 — Extras" />
+      <a
+        href="/api/export"
+        className="flex items-center justify-center gap-2 rounded-2xl bg-white p-4 text-sm font-medium shadow-sm dark:bg-neutral-900"
+        download
+      >
+        <Download size={18} className="text-brand" />
+        Exportar meus dados (CSV)
+      </a>
 
       <form action={signOut}>
         <button

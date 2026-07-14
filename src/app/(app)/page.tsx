@@ -1,18 +1,20 @@
 import Link from "next/link";
 import { CreditCard, PiggyBank, Repeat, Target, TrendingDown, TrendingUp } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { currentReferenceMonth, formatMonthLabel } from "@/lib/date";
+import { currentReferenceMonth, formatMonthLabel, shortMonthLabel } from "@/lib/date";
+import { spendingByCategory, monthlyTotals } from "@/lib/reports";
 import { formatCents } from "@/lib/money";
+import { SpendingCharts, type CategorySlice } from "@/components/spending-charts";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
   const refMonth = currentReferenceMonth();
 
-  const [{ data: profile }, { data: cards }, { data: installments }, { data: incomes }, { data: openInvoices }] =
+  const [{ data: profile }, { data: cards }, { data: categories }, { data: incomes }, { data: openInvoices }, spending, monthly] =
     await Promise.all([
       supabase.from("profiles").select("display_name").single(),
-      supabase.from("cards").select("id, name, color").eq("active", true),
-      supabase.from("installments").select("amount_cents, card_id, reference_month").eq("reference_month", refMonth),
+      supabase.from("cards").select("id, name").eq("active", true),
+      supabase.from("categories").select("id, name, color"),
       supabase.from("incomes").select("amount_cents").eq("reference_month", refMonth),
       supabase
         .from("invoices")
@@ -20,14 +22,27 @@ export default async function DashboardPage() {
         .eq("status", "open")
         .order("due_date")
         .limit(6),
+      spendingByCategory(supabase, refMonth),
+      monthlyTotals(supabase, refMonth, 6),
     ]);
 
-  const spent = (installments ?? []).reduce((s, i) => s + i.amount_cents, 0);
+  const spent = [...spending.values()].reduce((s, v) => s + v, 0);
   const received = (incomes ?? []).reduce((s, i) => s + i.amount_cents, 0);
   const balance = received - spent;
   const cardName = new Map((cards ?? []).map((c) => [c.id, c.name]));
 
-  // Total de cada fatura em aberto (soma das parcelas do cartão naquele mês).
+  // Fatias do gráfico por categoria
+  const byCategory: CategorySlice[] = [
+    ...(categories ?? []).map((c) => ({
+      name: c.name,
+      value: spending.get(c.id) ?? 0,
+      color: c.color ?? "#94a3b8",
+    })),
+    ...(spending.get("none") ? [{ name: "Sem categoria", value: spending.get("none")!, color: "#cbd5e1" }] : []),
+  ];
+  const monthlyBars = monthly.map((m) => ({ label: shortMonthLabel(m.month), value: m.cents }));
+
+  // Total de cada fatura em aberto
   const invoiceTotals = new Map<string, number>();
   if (openInvoices?.length) {
     const { data: allInst } = await supabase
@@ -56,19 +71,17 @@ export default async function DashboardPage() {
 
       <div className="rounded-2xl bg-white p-4 shadow-sm dark:bg-neutral-900">
         <p className="text-xs text-neutral-500">Saldo do mês (recebido − gasto)</p>
-        <p className={`text-2xl font-bold ${balance < 0 ? "text-red-500" : "text-brand"}`}>
-          {formatCents(balance)}
-        </p>
+        <p className={`text-2xl font-bold ${balance < 0 ? "text-red-500" : "text-brand"}`}>{formatCents(balance)}</p>
       </div>
 
-      {/* Atalhos */}
       <div className="grid grid-cols-3 gap-3">
         <QuickLink href="/recebimentos" icon={<PiggyBank size={20} />} label="Renda" />
         <QuickLink href="/recorrentes" icon={<Repeat size={20} />} label="Recorrentes" />
         <QuickLink href="/orcamento" icon={<Target size={20} />} label="Orçamento" />
       </div>
 
-      {/* Faturas em aberto */}
+      <SpendingCharts byCategory={byCategory} monthly={monthlyBars} />
+
       {openInvoices && openInvoices.length > 0 && (
         <section className="flex flex-col gap-2">
           <h2 className="font-semibold">Faturas em aberto</h2>
@@ -81,9 +94,7 @@ export default async function DashboardPage() {
                 >
                   <div>
                     <p className="font-medium">{cardName.get(inv.card_id) ?? "Cartão"}</p>
-                    <p className="text-xs text-neutral-500">
-                      vence em {inv.due_date.split("-").reverse().join("/")}
-                    </p>
+                    <p className="text-xs text-neutral-500">vence em {inv.due_date.split("-").reverse().join("/")}</p>
                   </div>
                   <span className="font-semibold">
                     {formatCents(invoiceTotals.get(`${inv.card_id}|${inv.reference_month}`) ?? 0)}

@@ -42,3 +42,11 @@ export function formatDayMonth(iso: string): string {
   const [, m0, d] = ymd(iso);
   return `${String(d).padStart(2, "0")}/${String(m0 + 1).padStart(2, "0")}`;
 }
+
+const SHORT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+/** Rótulo curto de uma competência: "2026-07-01" → "jul". */
+export function shortMonthLabel(referenceMonth: string): string {
+  const [, m0] = ymd(referenceMonth);
+  return SHORT[m0];
+}
