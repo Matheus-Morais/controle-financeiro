@@ -1,23 +1,10 @@
 "use client";
 
 import { useActionState } from "react";
-import { useFormStatus } from "react-dom";
+import { SubmitButton } from "@/components/submit-button";
 
 type State = { error?: string } | undefined;
 type Action = (prev: unknown, formData: FormData) => Promise<State>;
-
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="w-full rounded-xl bg-brand py-3 font-semibold text-white transition active:scale-[0.98] disabled:opacity-60"
-    >
-      {pending ? "Aguarde…" : "Salvar nova senha"}
-    </button>
-  );
-}
 
 export function NewPasswordForm({ action }: { action: Action }) {
   const [state, formAction] = useActionState(action, undefined);
@@ -52,7 +39,7 @@ export function NewPasswordForm({ action }: { action: Action }) {
 
       {state?.error && <p className="text-sm text-red-600">{state.error}</p>}
 
-      <SubmitButton />
+      <SubmitButton pendingLabel="Aguarde…">Salvar nova senha</SubmitButton>
     </form>
   );
 }

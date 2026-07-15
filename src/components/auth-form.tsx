@@ -2,22 +2,9 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
-import { useFormStatus } from "react-dom";
+import { SubmitButton } from "@/components/submit-button";
 
 type Action = (prev: unknown, formData: FormData) => Promise<{ error?: string } | undefined>;
-
-function SubmitButton({ label }: { label: string }) {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="w-full rounded-xl bg-brand py-3 font-semibold text-white transition active:scale-[0.98] disabled:opacity-60"
-    >
-      {pending ? "Aguarde…" : label}
-    </button>
-  );
-}
 
 export function AuthForm({
   mode,
@@ -76,7 +63,7 @@ export function AuthForm({
 
       {state?.error && <p className="text-sm text-red-600">{state.error}</p>}
 
-      <SubmitButton label={isSignup ? "Criar conta" : "Entrar"} />
+      <SubmitButton pendingLabel="Aguarde…">{isSignup ? "Criar conta" : "Entrar"}</SubmitButton>
 
       <p className="text-center text-sm text-neutral-500">
         {isSignup ? (

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { Bell, BellOff, Send } from "lucide-react";
+import { Spinner } from "@/components/loader";
 import {
   getExistingSubscription,
   pushSupported,
@@ -122,7 +123,7 @@ export function NotificationSettings({
               disabled={busy}
               className="flex items-center justify-center gap-2 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white disabled:opacity-50"
             >
-              <Bell size={16} /> Ativar notificações neste dispositivo
+              {busy ? <Spinner size={16} /> : <Bell size={16} />} Ativar notificações neste dispositivo
             </button>
           ) : (
             <div className="flex gap-2">
@@ -131,14 +132,14 @@ export function NotificationSettings({
                 disabled={busy}
                 className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white disabled:opacity-50"
               >
-                <Send size={16} /> Enviar teste
+                {busy ? <Spinner size={16} /> : <Send size={16} />} Enviar teste
               </button>
               <button
                 onClick={disablePush}
                 disabled={busy}
                 className="flex items-center justify-center gap-2 rounded-xl border border-neutral-300 px-3 py-2.5 text-sm font-medium disabled:opacity-50 dark:border-neutral-700"
               >
-                <BellOff size={16} /> Desativar
+                {busy ? <Spinner size={16} /> : <BellOff size={16} />} Desativar
               </button>
             </div>
           )}
@@ -192,7 +193,11 @@ export function NotificationSettings({
             ))}
           </div>
         )}
-        {pendingPrefs && <p className="mt-2 text-xs text-neutral-400">Salvando…</p>}
+        {pendingPrefs && (
+          <p className="mt-2 flex items-center gap-1 text-xs text-neutral-400">
+            <Spinner size={12} /> Salvando…
+          </p>
+        )}
       </div>
     </section>
   );
