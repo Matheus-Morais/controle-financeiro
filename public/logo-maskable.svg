@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Controle Financeiro">
+  <rect width="512" height="512" fill="#16a34a"/>
+  <g fill="#ffffff" transform="translate(76.8,76.8) scale(0.7)">
+    <rect x="126" y="316" width="68" height="76" rx="20"/>
+    <rect x="222" y="264" width="68" height="128" rx="20"/>
+    <rect x="318" y="196" width="68" height="196" rx="20"/>
+  </g>
+</svg>
