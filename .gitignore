@@ -40,3 +40,9 @@ supabase/.temp
 
 .vercel
 .env*
+
+# typescript build cache (regenerado a cada build; não versionar)
+*.tsbuildinfo
+
+# claude code (instruções locais)
+CLAUDE.md
