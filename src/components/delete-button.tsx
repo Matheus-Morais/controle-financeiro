@@ -2,6 +2,7 @@
 
 import { useTransition } from "react";
 import { Trash2 } from "lucide-react";
+import { Spinner } from "@/components/loader";
 
 /** Botão de exclusão que chama uma server action (já vinculada ao id). */
 export function DeleteButton({
@@ -21,7 +22,7 @@ export function DeleteButton({
       className="p-2 text-neutral-400 hover:text-red-500 disabled:opacity-50"
       aria-label="Excluir"
     >
-      <Trash2 size={18} />
+      {pending ? <Spinner size={18} /> : <Trash2 size={18} />}
     </button>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Globe } from "lucide-react";
+import { Spinner } from "@/components/loader";
 import { saveTimezone } from "@/app/(app)/config/actions";
 
 const ZONES = [
@@ -38,7 +39,11 @@ export function TimezoneSelect({ initial }: { initial: string }) {
           </option>
         ))}
       </select>
-      {pending && <p className="text-xs text-neutral-400">Salvando…</p>}
+      {pending && (
+        <p className="flex items-center gap-1 text-xs text-neutral-400">
+          <Spinner size={12} /> Salvando…
+        </p>
+      )}
     </section>
   );
 }
