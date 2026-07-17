@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
-import { useFormStatus } from "react-dom";
+import { SubmitButton } from "@/components/submit-button";
 import { parseBRLToCents } from "@/lib/money";
 
 type ActionState = { error?: string } | undefined;
@@ -30,19 +30,6 @@ function centsToInput(cents: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-}
-
-function SubmitButton({ editing }: { editing: boolean }) {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="w-full rounded-xl bg-brand py-3 font-semibold text-white active:scale-[0.98] disabled:opacity-60"
-    >
-      {pending ? "Salvando…" : editing ? "Salvar alterações" : "Salvar gasto"}
-    </button>
-  );
 }
 
 export function ExpenseForm({
@@ -190,7 +177,9 @@ export function ExpenseForm({
       </label>
 
       {state?.error && <p className="text-sm text-red-600">{state.error}</p>}
-      <SubmitButton editing={!!expense} />
+      <SubmitButton pendingLabel="Salvando…">
+        {expense ? "Salvar alterações" : "Salvar gasto"}
+      </SubmitButton>
     </form>
   );
 }
