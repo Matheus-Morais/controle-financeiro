@@ -14,6 +14,7 @@ import {
   type ExtractedTipo,
 } from "@/lib/invoice-import";
 import { getExistingInvoiceKeys, importarGastosDaFatura } from "@/app/(app)/gastos/importar/actions";
+import { ConfirmCardModal } from "@/components/confirm-card-modal";
 
 const MAX_BYTES = 4 * 1024 * 1024;
 
@@ -88,9 +89,18 @@ export function ImportInvoice({
 
   const [extracted, setExtracted] = useState<ExtractedInvoice | null>(null);
   const [items, setItems] = useState<EditableItem[]>([]);
+  const [cardsList, setCardsList] = useState<Card[]>(cards);
   const [cardId, setCardId] = useState("");
   const [referenceMonth, setReferenceMonth] = useState(currentMonth);
   const [existingKeys, setExistingKeys] = useState<Set<string>>(new Set());
+
+  // Cartão veio de um match confiável (últimos 4 dígitos do PDF) ou de um
+  // fallback (nenhum cartão bateu, caiu no primeiro da lista)? No segundo caso
+  // exigimos confirmação antes de gravar — é onde o usuário costuma esquecer
+  // de trocar o cartão errado. Trocar manualmente também conta como confiável.
+  const [cardConfident, setCardConfident] = useState(false);
+  const [detectedDigits, setDetectedDigits] = useState<string | null>(null);
+  const [showCardConfirm, setShowCardConfirm] = useState(false);
 
   const [saveState, saveAction, saving] = useActionState(importarGastosDaFatura, undefined);
   const [navigating, setNavigating] = useState(false);
@@ -161,10 +171,12 @@ export function ImportInvoice({
       setExtracted(inv);
       setItems(toEditableItems(inv, categories));
 
-      // Cartão: casa pelos últimos 4 dígitos, senão o primeiro.
-      const digits = inv.ult4_digitos?.replace(/\D/g, "").slice(-4);
-      const matched = digits ? cards.find((c) => c.last_four === digits) : undefined;
-      setCardId(matched?.id ?? cards[0]?.id ?? "");
+      // Cartão: casa pelos últimos 4 dígitos, senão o primeiro (fallback, exige confirmação).
+      const digits = inv.ult4_digitos?.replace(/\D/g, "").slice(-4) || null;
+      const matched = digits ? cardsList.find((c) => c.last_four === digits) : undefined;
+      setCardId(matched?.id ?? cardsList[0]?.id ?? "");
+      setCardConfident(!!matched);
+      setDetectedDigits(digits);
 
       // Competência: da sugestão (YYYY-MM), senão o mês corrente.
       const sug = inv.competencia_sugerida;
@@ -202,6 +214,14 @@ export function ImportInvoice({
 
   function handleSave() {
     if (!cardId || included.length === 0 || hasInvalid) return;
+    if (!cardConfident) {
+      setShowCardConfirm(true);
+      return;
+    }
+    doSave();
+  }
+
+  function doSave() {
     saveAction({
       card_id: cardId,
       reference_month: referenceMonth,
@@ -266,10 +286,13 @@ export function ImportInvoice({
           Cartão
           <select
             value={cardId}
-            onChange={(e) => setCardId(e.target.value)}
+            onChange={(e) => {
+              setCardId(e.target.value);
+              setCardConfident(true);
+            }}
             className="rounded-xl border border-neutral-300 bg-white px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-900"
           >
-            {cards.map((c) => (
+            {cardsList.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
                 {c.last_four ? ` ••${c.last_four}` : ""}
@@ -417,6 +440,25 @@ export function ImportInvoice({
             ? "Redirecionando…"
             : `Importar ${included.length} lançamento${included.length === 1 ? "" : "s"}`}
       </button>
+
+      {showCardConfirm && (
+        <ConfirmCardModal
+          cards={cardsList}
+          cardId={cardId}
+          onChangeCardId={setCardId}
+          detectedDigits={detectedDigits}
+          onCancel={() => setShowCardConfirm(false)}
+          onConfirm={() => {
+            setCardConfident(true);
+            setShowCardConfirm(false);
+            doSave();
+          }}
+          onCardCreated={(card) => {
+            setCardsList((prev) => [...prev, card]);
+            setCardId(card.id);
+          }}
+        />
+      )}
     </div>
   );
 }
