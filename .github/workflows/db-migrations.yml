@@ -1,0 +1,32 @@
+name: Deploy Supabase migrations
+
+# Aplica as migrations em supabase/migrations/ no projeto Supabase de produção
+# sempre que houver push na main alterando essa pasta. Requer os secrets
+# SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD e SUPABASE_PROJECT_ID
+# configurados em Settings → Secrets and variables → Actions.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link ao projeto Supabase
+        run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
+
+      - name: Aplicar migrations pendentes
+        run: supabase db push
