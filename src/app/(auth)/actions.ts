@@ -33,11 +33,13 @@ export async function signUp(_prev: unknown, formData: FormData) {
   const { error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { display_name: displayName } },
+    // onboarding_pending marca só quem se cadastrou a partir de agora — usuários
+    // existentes não têm essa chave e não são jogados no fluxo de onboarding.
+    options: { data: { display_name: displayName, onboarding_pending: true } },
   });
 
   if (error) return { error: error.message };
-  redirect("/");
+  redirect("/onboarding");
 }
 
 export async function signOut() {
