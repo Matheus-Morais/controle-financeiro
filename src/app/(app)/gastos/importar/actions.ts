@@ -90,6 +90,29 @@ export async function importarGastosDaFatura(
     .upsert([rows.invoice], { onConflict: "card_id,reference_month", ignoreDuplicates: true });
   if (invErr) return { error: invErr.message };
 
+  // Cria RecurringExpense para itens marcados como recorrente.
+  const recurringItems = items
+    .map((it, i) => ({ it, validated: validated[i] }))
+    .filter(({ it }) => it.mark_as_recurring);
+
+  if (recurringItems.length > 0) {
+    const recurringRows = recurringItems.map(({ it, validated: v }) => ({
+      user_id: user.id,
+      card_id: card_id,
+      account_id: null,
+      category_id: v.categoryId,
+      description: v.description,
+      amount_cents: v.amountCents,
+      // Dia de cobrança = dia da compra; fácil de ajustar depois na tela de Recorrentes.
+      billing_day: parseInt(it.purchase_date.slice(8, 10), 10),
+      start_month: reference_month,
+      end_month: null,
+      active: true,
+    }));
+    const { error: recErr } = await supabase.from("recurring_expenses").insert(recurringRows);
+    if (recErr) return { error: recErr.message };
+  }
+
   revalidatePath("/", "layout");
   // Retorna sucesso (não redirect): a navegação é client-side no componente, o
   // que resolve o pending na hora e evita o spinner preso no mobile.
