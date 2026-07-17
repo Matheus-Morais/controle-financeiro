@@ -50,6 +50,7 @@ export default async function CartaoDetailPage({
     total += it.amount_cents;
     groups[tx.kind as Kind].push({
       id: it.id,
+      transactionId: it.transaction_id,
       description: tx.description,
       amountCents: it.amount_cents,
       number: it.number,
@@ -117,7 +118,7 @@ export default async function CartaoDetailPage({
         </div>
       </div>
 
-      <InvoiceTabs groups={groups} />
+      <InvoiceTabs groups={groups} currentMonth={refMonth} />
     </div>
   );
 }

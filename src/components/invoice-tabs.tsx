@@ -1,11 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { formatCents } from "@/lib/money";
 import { formatDayMonth } from "@/lib/date";
+import { ConvertToRecurringButton } from "@/components/convert-to-recurring-button";
 
 export interface InvoiceItem {
   id: string;
+  transactionId: string;
   description: string;
   amountCents: number;
   number: number;
@@ -23,8 +27,10 @@ const TABS: { key: TabKey; label: string }[] = [
 
 export function InvoiceTabs({
   groups,
+  currentMonth,
 }: {
   groups: Record<TabKey, InvoiceItem[]>;
+  currentMonth: string; // YYYY-MM-01
 }) {
   const [active, setActive] = useState<TabKey>("installment");
   const items = groups[active];
@@ -62,24 +68,38 @@ export function InvoiceTabs({
           {items.map((item) => {
             const remaining = item.installmentsCount - item.number;
             return (
-              <li
-                key={item.id}
-                className="flex items-center justify-between rounded-xl bg-white p-3 shadow-sm dark:bg-neutral-900"
-              >
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{item.description}</p>
-                  <p className="text-xs text-neutral-500">
-                    {item.installmentsCount > 1 && (
-                      <>
-                        Parcela {item.number}/{item.installmentsCount}
-                        {remaining > 0 && ` · faltam ${remaining}`}
-                        {" · "}
-                      </>
-                    )}
-                    compra em {formatDayMonth(item.purchaseDate)}
-                  </p>
-                </div>
-                <p className="ml-3 shrink-0 font-semibold">{formatCents(item.amountCents)}</p>
+              <li key={item.id} className="flex items-center gap-1">
+                <Link
+                  href={`/gastos/${item.transactionId}/editar`}
+                  className="flex flex-1 items-center justify-between rounded-xl bg-white p-3 shadow-sm active:scale-[0.99] dark:bg-neutral-900"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{item.description}</p>
+                    <p className="text-xs text-neutral-500">
+                      {item.installmentsCount > 1 && (
+                        <>
+                          Parcela {item.number}/{item.installmentsCount}
+                          {remaining > 0 && ` · faltam ${remaining}`}
+                          {" · "}
+                        </>
+                      )}
+                      compra em {formatDayMonth(item.purchaseDate)}
+                    </p>
+                  </div>
+                  <div className="ml-3 flex shrink-0 items-center gap-1">
+                    <span className="font-semibold">{formatCents(item.amountCents)}</span>
+                    <ChevronRight size={16} className="text-neutral-400" />
+                  </div>
+                </Link>
+                {active === "single" && (
+                  <ConvertToRecurringButton
+                    transactionId={item.transactionId}
+                    description={item.description}
+                    amountCents={item.amountCents}
+                    purchaseDate={item.purchaseDate}
+                    currentMonth={currentMonth}
+                  />
+                )}
               </li>
             );
           })}

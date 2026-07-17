@@ -47,13 +47,26 @@ export function parseSource(source: string): { kind: "card" | "account"; id: str
   return { kind: kind as "card" | "account", id };
 }
 
-export const incomeSchema = z.object({
-  description: z.string().trim().min(1, "Informe uma descrição").max(120),
-  amount_cents: z.coerce.number().int().positive("Valor deve ser maior que zero"),
-  receipt_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida"),
-  is_recurring: z.coerce.boolean().default(false),
-  recurring_day: z.coerce.number().int().min(1).max(31).optional(),
-});
+export const incomeRecurringModeSchema = z.enum(["day_of_month", "nth_business_day"]);
+
+export const incomeSchema = z
+  .object({
+    description: z.string().trim().min(1, "Informe uma descrição").max(120),
+    amount_cents: z.coerce.number().int().positive("Valor deve ser maior que zero"),
+    receipt_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida"),
+    is_recurring: z.coerce.boolean().default(false),
+    recurring_mode: incomeRecurringModeSchema.default("day_of_month"),
+    recurring_day: z.coerce.number().int().min(1).max(31).optional(),
+    /** Posição do dia útil (1 = 1º dia útil), ex.: 5 = 5º dia útil. */
+    recurring_business_day: z.coerce.number().int().min(1).max(23).optional(),
+  })
+  .refine(
+    (v) =>
+      !v.is_recurring ||
+      v.recurring_mode !== "nth_business_day" ||
+      v.recurring_business_day != null,
+    { message: "Informe o dia útil (ex.: 5)", path: ["recurring_business_day"] },
+  );
 
 export type IncomeInput = z.infer<typeof incomeSchema>;
 

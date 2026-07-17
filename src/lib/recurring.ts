@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { generateInstallments } from "./installments";
 import { invoiceRefForMonth, clampDay, toISO, ymd } from "./invoice";
+import { nthBusinessDay } from "./business-days";
 import { shiftReferenceMonth } from "./date";
 
 type DB = SupabaseClient<Database>;
@@ -117,7 +118,7 @@ export async function materializeRecurringIncomes(db: DB, userId: string, refMon
 
   const { data: prev } = await db
     .from("incomes")
-    .select("description, amount_cents, recurring_day")
+    .select("description, amount_cents, recurring_day, recurring_mode, recurring_business_day")
     .eq("user_id", userId)
     .eq("is_recurring", true)
     .eq("reference_month", prevMonth);
@@ -135,7 +136,10 @@ export async function materializeRecurringIncomes(db: DB, userId: string, refMon
       .eq("description", inc.description);
     if ((count ?? 0) > 0) continue;
 
-    const day = clampDay(inc.recurring_day ?? 1, ry, rm0);
+    const day =
+      inc.recurring_mode === "nth_business_day"
+        ? nthBusinessDay(ry, rm0, inc.recurring_business_day ?? 5)
+        : clampDay(inc.recurring_day ?? 1, ry, rm0);
     await db.from("incomes").insert({
       user_id: userId,
       description: inc.description,
@@ -143,7 +147,9 @@ export async function materializeRecurringIncomes(db: DB, userId: string, refMon
       receipt_date: toISO(ry, rm0, day),
       reference_month: refMonth,
       is_recurring: true,
+      recurring_mode: inc.recurring_mode,
       recurring_day: inc.recurring_day,
+      recurring_business_day: inc.recurring_business_day,
     });
     created++;
   }

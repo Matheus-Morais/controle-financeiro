@@ -123,6 +123,8 @@ export type Income = Timestamps & {
   reference_month: string;
   is_recurring: boolean;
   recurring_day: number | null;
+  recurring_mode: "day_of_month" | "nth_business_day";
+  recurring_business_day: number | null;
 };
 
 export type Budget = Timestamps & {

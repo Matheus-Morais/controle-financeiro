@@ -39,6 +39,8 @@ interface EditableItem {
   importable: boolean;
   include: boolean;
   duplicate: boolean;
+  suggestedRecurring: boolean; // IA sinalizou como provável recorrente
+  markAsRecurring: boolean; // usuário quer criar como recorrente
 }
 
 const TIPO_LABEL: Record<ExtractedTipo, string> = {
@@ -62,6 +64,8 @@ function toEditableItems(inv: ExtractedInvoice, categories: Category[]): Editabl
     importable: isImportable(it.tipo),
     include: isImportable(it.tipo),
     duplicate: false,
+    suggestedRecurring: it.sugerido_recorrente,
+    markAsRecurring: false,
   }));
 }
 
@@ -178,12 +182,14 @@ export function ImportInvoice({
     () => parseBRLToCents(extracted?.total_fatura ?? ""),
     [extracted],
   );
+  // Reconciliação: soma apenas compras/encargos/outros e estornos (sinal negativo).
+  // Pagamentos de fatura anterior são excluídos — o total_fatura impresso não os inclui.
   const signedSum = useMemo(
     () =>
       items.reduce((s, it) => {
+        if (it.tipo === "pagamento") return s;
         const c = parseBRLToCents(it.valorBrl) ?? 0;
-        const credit = it.tipo === "credito" || it.tipo === "pagamento";
-        return s + (credit ? -c : c);
+        return s + (it.tipo === "credito" ? -c : c);
       }, 0),
     [items],
   );
@@ -206,6 +212,7 @@ export function ImportInvoice({
         purchase_date: it.purchaseDate,
         category_id: it.categoryId || "",
         parcela: it.parcela,
+        mark_as_recurring: it.markAsRecurring,
       })),
     });
   }
@@ -344,6 +351,19 @@ export function ImportInvoice({
                     {it.duplicate && " · já importado"}
                   </p>
 
+                  {it.suggestedRecurring && it.importable && (
+                    <button
+                      type="button"
+                      onClick={() => updateItem(it.id, { markAsRecurring: !it.markAsRecurring })}
+                      className={`mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium transition ${
+                        it.markAsRecurring
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
+                          : "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
+                      }`}
+                    >
+                      {it.markAsRecurring ? "✓ Recorrente" : "↻ Recorrente?"}
+                    </button>
+                  )}
                   {it.importable && (
                     <div className="mt-2 grid grid-cols-2 gap-2">
                       <input
