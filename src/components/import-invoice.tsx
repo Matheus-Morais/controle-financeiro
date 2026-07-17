@@ -243,7 +243,7 @@ export function ImportInvoice({
       <form onSubmit={handleUpload} className="relative flex flex-col gap-4">
         {/* overlay de análise da IA */}
         {uploading && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 rounded-2xl bg-white/90 backdrop-blur-sm dark:bg-neutral-950/90">
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 rounded-2xl bg-neutral-50 dark:bg-neutral-950">
             <WaveformLoader size={48} color="var(--color-brand, #6366f1)" speed={0.9} />
             <p className="text-sm font-medium text-neutral-600 dark:text-neutral-300">
               Analisando sua fatura…

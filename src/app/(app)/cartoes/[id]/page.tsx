@@ -80,7 +80,7 @@ export default async function CartaoDetailPage({
         <Link href="/cartoes" className="text-neutral-500">
           <ChevronLeft />
         </Link>
-        <h1 className="flex-1 truncate text-2xl font-bold">{card.name}</h1>
+        <h1 className="min-w-0 flex-1 truncate text-2xl font-bold">{card.name}</h1>
         <Link href={`/cartoes/${id}/editar`} className="text-neutral-500">
           <Pencil size={20} />
         </Link>
