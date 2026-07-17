@@ -68,10 +68,10 @@ export function InvoiceTabs({
           {items.map((item) => {
             const remaining = item.installmentsCount - item.number;
             return (
-              <li key={item.id} className="flex items-center gap-1">
+              <li key={item.id} className="flex min-w-0 items-center gap-1">
                 <Link
                   href={`/gastos/${item.transactionId}/editar`}
-                  className="flex flex-1 items-center justify-between rounded-xl bg-white p-3 shadow-sm active:scale-[0.99] dark:bg-neutral-900"
+                  className="flex min-w-0 flex-1 items-center justify-between rounded-xl bg-white p-3 shadow-sm active:scale-[0.99] dark:bg-neutral-900"
                 >
                   <div className="min-w-0">
                     <p className="truncate font-medium">{item.description}</p>
