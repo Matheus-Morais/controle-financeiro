@@ -66,6 +66,11 @@ export const importItemInputSchema = z.object({
   valor_brl: z.string().trim().min(1, "Informe o valor"),
   purchase_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida"),
   category_id: z.string().uuid().nullable().or(z.literal("")),
+  /** Parcela detectada na fatura (nº atual / total); null quando à vista. */
+  parcela: z
+    .object({ atual: z.number().int(), total: z.number().int() })
+    .nullable()
+    .optional(),
 });
 export type ImportItemInput = z.infer<typeof importItemInputSchema>;
 
@@ -86,6 +91,29 @@ export function normalizeText(s: string): string {
     .replace(/[̀-ͯ]/g, "")
     .trim()
     .toLowerCase();
+}
+
+/**
+ * Token de parcela no FIM do nome, em formatos comuns de fatura:
+ * "(1/4)", "1/4", "01/04", "Parcela 1 de 4", "PARC 01/04".
+ */
+const INSTALLMENT_SUFFIX =
+  /\s*[-–—]?\s*\(?\s*(?:parcela\s+|parc\.?\s+)?\d{1,3}(?:\s*\/\s*|\s+de\s+)\d{1,3}\s*\)?\s*$/i;
+
+/**
+ * Remove o token de parcela do TÍTULO amigável (ex.: "Amazon Marketplace (1/4)"
+ * → "Amazon Marketplace"). Só limpa quando a IA de fato detectou parcela, para
+ * não mutilar um nome que por acaso termine em "X/Y". O nome BRUTO
+ * (`statement_description`, usado na dedupe) nunca passa por aqui.
+ */
+export function stripInstallmentSuffix(
+  descricao: string,
+  parcela: { atual: number; total: number } | null,
+): string {
+  const base = descricao.trim();
+  if (!parcela) return base;
+  const cleaned = base.replace(INSTALLMENT_SUFFIX, "").trim();
+  return cleaned.length > 0 ? cleaned : base;
 }
 
 /** Só as compras/encargos entram como gasto; créditos e pagamentos são pulados. */
@@ -206,6 +234,11 @@ export interface ValidatedImportItem {
   amountCents: number;
   purchaseDate: string;
   categoryId: string | null;
+  /**
+   * Parcela do lançamento (nº atual / total), quando a fatura indica parcelamento.
+   * `null` = à vista. Não gera as parcelas futuras — cada fatura traz a sua.
+   */
+  installment: { number: number; count: number } | null;
 }
 
 export interface ImportContext {
@@ -223,10 +256,10 @@ export interface TransactionRow {
   account_id: null;
   category_id: string | null;
   description: string;
-  kind: "single";
+  kind: "single" | "installment";
   total_amount_cents: number;
   purchase_date: string;
-  installments_count: 1;
+  installments_count: number;
   notes: null;
   statement_description: string;
 }
@@ -236,7 +269,7 @@ export interface InstallmentRow {
   transaction_id: string;
   card_id: string;
   account_id: null;
-  number: 1;
+  number: number;
   amount_cents: number;
   reference_month: string;
   status: "open";
@@ -258,9 +291,12 @@ export interface ImportRows {
 }
 
 /**
- * Monta as linhas a gravar. Cada item vira UMA transação `single` + UMA parcela
- * na competência FORÇADA (não recalcula por data — é uma fatura, tudo cai no mês
- * escolhido). Também monta a linha da fatura (capa) com fechamento/vencimento.
+ * Monta as linhas a gravar. Cada item vira UMA transação + UMA parcela na
+ * competência FORÇADA (não recalcula por data — é uma fatura, tudo cai no mês
+ * escolhido). Quando o item tem parcela (`installment`), a transação fica como
+ * `installment` com `installments_count = total` e a parcela guarda `number =
+ * atual`; as parcelas futuras NÃO são geradas (cada fatura traz a sua). Sem
+ * parcela, é um gasto `single` (número 1 de 1). Também monta a capa da fatura.
  */
 export function buildImportRows(items: ValidatedImportItem[], ctx: ImportContext): ImportRows {
   const transactions: TransactionRow[] = items.map((it) => ({
@@ -270,10 +306,10 @@ export function buildImportRows(items: ValidatedImportItem[], ctx: ImportContext
     account_id: null,
     category_id: it.categoryId,
     description: it.description,
-    kind: "single",
+    kind: it.installment ? "installment" : "single",
     total_amount_cents: it.amountCents,
     purchase_date: it.purchaseDate,
-    installments_count: 1,
+    installments_count: it.installment ? it.installment.count : 1,
     notes: null,
     statement_description: it.statementDescription,
   }));
@@ -283,7 +319,7 @@ export function buildImportRows(items: ValidatedImportItem[], ctx: ImportContext
     transaction_id: it.id,
     card_id: ctx.cardId,
     account_id: null,
-    number: 1,
+    number: it.installment ? it.installment.number : 1,
     amount_cents: it.amountCents,
     reference_month: ctx.referenceMonth,
     status: "open",

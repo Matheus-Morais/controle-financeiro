@@ -6,6 +6,7 @@ import {
   isImportable,
   matchCategoryByName,
   reconcile,
+  stripInstallmentSuffix,
   type ValidatedImportItem,
 } from "./invoice-import";
 
@@ -87,6 +88,7 @@ describe("buildImportRows", () => {
       amountCents: 1500,
       purchaseDate: "2026-07-05",
       categoryId: "c-alim",
+      installment: null,
     },
     {
       id: "t2",
@@ -96,6 +98,7 @@ describe("buildImportRows", () => {
       // data que, pela regra normal (fecha dia 25), cairia em agosto:
       purchaseDate: "2026-07-28",
       categoryId: "c-transp",
+      installment: null,
     },
   ];
   const ctx = {
@@ -139,6 +142,45 @@ describe("buildImportRows", () => {
       due_date: "2026-08-05", // dueDay(5) <= closingDay(25) → vence no mês seguinte
       status: "open",
     });
+  });
+
+  it("quando há parcela, grava como 'installment' com nº atual/total (sem gerar as futuras)", () => {
+    const parc: ValidatedImportItem[] = [
+      {
+        id: "p1",
+        description: "Amazon Marketplace",
+        statementDescription: "AMAZON MKTP (1/4)",
+        amountCents: 5000,
+        purchaseDate: "2026-07-10",
+        categoryId: null,
+        installment: { number: 1, count: 4 },
+      },
+    ];
+    const { transactions, installments } = buildImportRows(parc, ctx);
+    expect(transactions[0]).toMatchObject({
+      kind: "installment",
+      installments_count: 4,
+      description: "Amazon Marketplace",
+    });
+    expect(installments).toHaveLength(1); // não espalha as parcelas futuras
+    expect(installments[0]).toMatchObject({ number: 1, amount_cents: 5000, reference_month: "2026-07-01" });
+  });
+});
+
+describe("stripInstallmentSuffix", () => {
+  const parc = { atual: 1, total: 4 };
+  it("remove o token de parcela do fim do título", () => {
+    expect(stripInstallmentSuffix("Amazon Marketplace (1/4)", parc)).toBe("Amazon Marketplace");
+    expect(stripInstallmentSuffix("Loja X 01/04", parc)).toBe("Loja X");
+    expect(stripInstallmentSuffix("Curso Parcela 1 de 4", parc)).toBe("Curso");
+    expect(stripInstallmentSuffix("Magazine - 3/10", { atual: 3, total: 10 })).toBe("Magazine");
+  });
+  it("não mexe no título quando não há parcela detectada", () => {
+    expect(stripInstallmentSuffix("Restaurante 3/4", null)).toBe("Restaurante 3/4");
+    expect(stripInstallmentSuffix("Amazon Marketplace (1/4)", null)).toBe("Amazon Marketplace (1/4)");
+  });
+  it("preserva o original se sobraria vazio", () => {
+    expect(stripInstallmentSuffix("1/4", parc)).toBe("1/4");
   });
 });
 
