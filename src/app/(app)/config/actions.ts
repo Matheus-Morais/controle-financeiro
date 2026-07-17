@@ -1,8 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { sendPush } from "@/lib/push-server";
+
+const RESET_CONFIRMATION = "REINICIAR CONTA";
+const DELETE_CONFIRMATION = "EXCLUIR CONTA";
 
 /** Persiste a subscription de Web Push do usuário atual. */
 export async function savePushSubscription(sub: {
@@ -113,4 +117,53 @@ export async function sendTestPush(): Promise<{ error?: string; sent?: number }>
     if (res.gone) await supabase.from("push_subscriptions").delete().eq("endpoint", s.endpoint);
   }
   return { sent };
+}
+
+/**
+ * Reinicia a conta: apaga cartões, gastos, parcelas, faturas, recebimentos,
+ * orçamentos, recorrentes e notificações, e recria os dados padrão (carteira
+ * + categorias), como se fosse um usuário novo. O login e o profile
+ * permanecem — só os registros e configs são zerados.
+ */
+export async function resetAccountData(_prev: unknown, formData: FormData) {
+  const confirmation = String(formData.get("confirmation") ?? "").trim();
+  if (confirmation !== RESET_CONFIRMATION) {
+    return { error: `Digite "${RESET_CONFIRMATION}" para confirmar.` };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado." };
+
+  const { error } = await supabase.rpc("reset_account_data");
+  if (error) return { error: error.message };
+
+  revalidatePath("/", "layout");
+  redirect("/");
+}
+
+/**
+ * Exclui a conta permanentemente: remove o usuário do Supabase Auth, o que
+ * apaga em cascata todos os registros do banco (todas as tabelas têm
+ * `on delete cascade` até auth.users). Não tem volta.
+ */
+export async function deleteAccount(_prev: unknown, formData: FormData) {
+  const confirmation = String(formData.get("confirmation") ?? "").trim();
+  if (confirmation !== DELETE_CONFIRMATION) {
+    return { error: `Digite "${DELETE_CONFIRMATION}" para confirmar.` };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado." };
+
+  const { error } = await createServiceClient().auth.admin.deleteUser(user.id);
+  if (error) return { error: error.message };
+
+  await supabase.auth.signOut({ scope: "local" });
+  redirect("/login");
 }

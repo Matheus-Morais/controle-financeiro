@@ -5,6 +5,7 @@ import { signOut } from "@/app/(auth)/actions";
 import { NotificationSettings } from "@/components/notification-settings";
 import { InstallPrompt } from "@/components/install-prompt";
 import { TimezoneSelect } from "@/components/timezone-select";
+import { AccountDangerZone } from "@/components/danger-zone";
 
 export default async function ConfigPage() {
   const supabase = await createClient();
@@ -63,6 +64,8 @@ export default async function ConfigPage() {
           Sair
         </button>
       </form>
+
+      <AccountDangerZone />
     </div>
   );
 }
