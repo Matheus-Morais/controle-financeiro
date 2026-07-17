@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Spinner } from "@/components/loader";
+import { Spinner, WaveformLoader } from "@/components/loader";
 import { formatCents, parseBRLToCents } from "@/lib/money";
 import {
   dedupeKey,
@@ -213,7 +213,16 @@ export function ImportInvoice({
   // ── Fase 1: upload ──────────────────────────────────────────────────────
   if (phase === "upload") {
     return (
-      <form onSubmit={handleUpload} className="flex flex-col gap-4">
+      <form onSubmit={handleUpload} className="relative flex flex-col gap-4">
+        {/* overlay de análise da IA */}
+        {uploading && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 rounded-2xl bg-white/90 backdrop-blur-sm dark:bg-neutral-950/90">
+            <WaveformLoader size={48} color="var(--color-brand, #6366f1)" speed={0.9} />
+            <p className="text-sm font-medium text-neutral-600 dark:text-neutral-300">
+              Analisando sua fatura…
+            </p>
+          </div>
+        )}
         <p className="text-sm text-neutral-500">
           Envie o PDF da fatura do cartão. Os lançamentos são lidos por IA e você revisa tudo antes
           de salvar.
@@ -236,8 +245,7 @@ export function ImportInvoice({
           disabled={!file || uploading}
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-3 font-semibold text-white transition active:scale-[0.98] disabled:opacity-60"
         >
-          {uploading && <Spinner size={18} />}
-          {uploading ? "Lendo a fatura…" : "Ler fatura"}
+          Ler fatura
         </button>
       </form>
     );
