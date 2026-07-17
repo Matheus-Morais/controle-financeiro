@@ -68,7 +68,20 @@ export async function POST(request: NextRequest) {
 
   // 3) Extrai via IA.
   try {
-    const pdfBase64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+    const bytes = await file.arrayBuffer();
+
+    // Verifica magic bytes: PDF válido começa com "%PDF" (25 50 44 46).
+    const header = new Uint8Array(bytes, 0, 4);
+    const isPdfMagic =
+      header[0] === 0x25 && header[1] === 0x50 && header[2] === 0x44 && header[3] === 0x46;
+    if (!isPdfMagic) {
+      return NextResponse.json(
+        { error: "O arquivo não é um PDF válido." },
+        { status: 400, headers: NO_STORE },
+      );
+    }
+
+    const pdfBase64 = Buffer.from(bytes).toString("base64");
     const invoice = await extractInvoice(pdfBase64, categoryNames);
     return NextResponse.json(invoice, { headers: NO_STORE });
   } catch (err) {

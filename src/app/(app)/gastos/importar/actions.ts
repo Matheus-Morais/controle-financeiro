@@ -80,15 +80,24 @@ export async function importarGastosDaFatura(
   // Gravação em lote (não atômica; ver limitação no plano). Ids pré-gerados
   // ligam parcela↔transação sem depender da ordem de retorno do insert.
   const { error: txErr } = await supabase.from("transactions").insert(rows.transactions);
-  if (txErr) return { error: txErr.message };
+  if (txErr) {
+    console.error("[importar] erro ao gravar transações:", txErr.code);
+    return { error: "Erro ao salvar os lançamentos. Tente novamente." };
+  }
 
   const { error: instErr } = await supabase.from("installments").insert(rows.installments);
-  if (instErr) return { error: instErr.message };
+  if (instErr) {
+    console.error("[importar] erro ao gravar parcelas:", instErr.code);
+    return { error: "Erro ao salvar os lançamentos. Tente novamente." };
+  }
 
   const { error: invErr } = await supabase
     .from("invoices")
     .upsert([rows.invoice], { onConflict: "card_id,reference_month", ignoreDuplicates: true });
-  if (invErr) return { error: invErr.message };
+  if (invErr) {
+    console.error("[importar] erro ao upsert fatura:", invErr.code);
+    return { error: "Erro ao salvar os lançamentos. Tente novamente." };
+  }
 
   revalidatePath("/", "layout");
   // Retorna sucesso (não redirect): a navegação é client-side no componente, o
