@@ -3,12 +3,25 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { cardSchema } from "@/lib/schemas";
+import { cardSchema, type CardInput } from "@/lib/schemas";
 
 type ActionState = { error?: string } | undefined;
 
 function emptyToNull(v: string | undefined): string | null {
   return v && v.length > 0 ? v : null;
+}
+
+function cardInsertPayload(userId: string, c: CardInput) {
+  return {
+    user_id: userId,
+    name: c.name,
+    brand: emptyToNull(c.brand),
+    closing_day: c.closing_day,
+    due_day: c.due_day,
+    color: emptyToNull(c.color),
+    last_four: emptyToNull(c.last_four),
+    credit_limit_cents: c.credit_limit_cents ?? null,
+  };
 }
 
 export async function createCard(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -21,21 +34,46 @@ export async function createCard(_prev: ActionState, formData: FormData): Promis
   } = await supabase.auth.getUser();
   if (!user) return { error: "Não autenticado." };
 
-  const c = parsed.data;
-  const { error } = await supabase.from("cards").insert({
-    user_id: user.id,
-    name: c.name,
-    brand: emptyToNull(c.brand),
-    closing_day: c.closing_day,
-    due_day: c.due_day,
-    color: emptyToNull(c.color),
-    last_four: emptyToNull(c.last_four),
-    credit_limit_cents: c.credit_limit_cents ?? null,
-  });
+  const { error } = await supabase.from("cards").insert(cardInsertPayload(user.id, parsed.data));
   if (error) return { error: error.message };
 
   revalidatePath("/cartoes");
   redirect("/cartoes");
+}
+
+type InlineCardState =
+  | { error?: string; ok?: boolean; card?: { id: string; name: string; last_four: string | null } }
+  | undefined;
+
+/**
+ * Variante de createCard para uso fora de um <form> (modal de confirmação de
+ * cartão na importação de fatura): recebe o payload já pronto em vez de
+ * FormData e RETORNA o cartão criado em vez de redirecionar, para não quebrar
+ * o fluxo client-side que a chama (mesmo motivo do retorno em
+ * importarGastosDaFatura).
+ */
+export async function createCardInline(
+  _prev: InlineCardState,
+  payload: unknown,
+): Promise<InlineCardState> {
+  const parsed = cardSchema.safeParse(payload);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos" };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado." };
+
+  const { data, error } = await supabase
+    .from("cards")
+    .insert(cardInsertPayload(user.id, parsed.data))
+    .select("id, name, last_four")
+    .single();
+  if (error) return { error: error.message };
+
+  revalidatePath("/cartoes");
+  return { ok: true, card: data };
 }
 
 export async function updateCard(
