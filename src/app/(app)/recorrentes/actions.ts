@@ -56,3 +56,49 @@ export async function deleteRecurring(id: string): Promise<void> {
   await supabase.from("recurring_expenses").delete().eq("id", id);
   revalidatePath("/recorrentes");
 }
+
+/**
+ * Cria um RecurringExpense a partir de uma transação já salva.
+ * O usuário informa o dia de cobrança e a partir de qual mês.
+ * A transação original não é alterada.
+ */
+export async function criarRecorrenteDeTransacao(
+  transactionId: string,
+  billingDay: number,
+  startMonth: string, // YYYY-MM
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado." };
+
+  const { data: tx } = await supabase
+    .from("transactions")
+    .select("description, total_amount_cents, card_id, account_id, category_id")
+    .eq("id", transactionId)
+    .eq("user_id", user.id)
+    .single();
+  if (!tx) return { error: "Transação não encontrada." };
+  if (!tx.card_id && !tx.account_id) return { error: "Transação sem cartão/conta associada." };
+
+  if (billingDay < 1 || billingDay > 31) return { error: "Dia de cobrança inválido." };
+  if (!/^\d{4}-\d{2}$/.test(startMonth)) return { error: "Mês de início inválido." };
+
+  const { error } = await supabase.from("recurring_expenses").insert({
+    user_id: user.id,
+    card_id: tx.card_id,
+    account_id: tx.account_id,
+    category_id: tx.category_id,
+    description: tx.description,
+    amount_cents: tx.total_amount_cents,
+    billing_day: billingDay,
+    start_month: `${startMonth}-01`,
+    active: true,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/recorrentes");
+  revalidatePath("/", "layout");
+  return {};
+}

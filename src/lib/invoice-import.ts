@@ -43,6 +43,12 @@ export const extractedItemSchema = z.object({
     .nullable(),
   /** Sugestão de categoria (idealmente um dos nomes do usuário). */
   categoria_sugerida: z.string().nullable(),
+  /**
+   * `true` quando a IA identifica o lançamento como provável gasto recorrente
+   * (assinatura, streaming, academia, seguro, SaaS, etc.). Apenas uma dica — o
+   * usuário decide na tela de revisão.
+   */
+  sugerido_recorrente: z.boolean(),
 });
 export type ExtractedItem = z.infer<typeof extractedItemSchema>;
 
@@ -71,6 +77,8 @@ export const importItemInputSchema = z.object({
     .object({ atual: z.number().int(), total: z.number().int() })
     .nullable()
     .optional(),
+  /** Quando true, cria um RecurringExpense além da transação normal. */
+  mark_as_recurring: z.boolean().optional(),
 });
 export type ImportItemInput = z.infer<typeof importItemInputSchema>;
 

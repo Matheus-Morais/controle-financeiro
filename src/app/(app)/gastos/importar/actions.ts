@@ -80,15 +80,47 @@ export async function importarGastosDaFatura(
   // Gravação em lote (não atômica; ver limitação no plano). Ids pré-gerados
   // ligam parcela↔transação sem depender da ordem de retorno do insert.
   const { error: txErr } = await supabase.from("transactions").insert(rows.transactions);
-  if (txErr) return { error: txErr.message };
+  if (txErr) {
+    console.error("[importar] erro ao gravar transações:", txErr.code);
+    return { error: "Erro ao salvar os lançamentos. Tente novamente." };
+  }
 
   const { error: instErr } = await supabase.from("installments").insert(rows.installments);
-  if (instErr) return { error: instErr.message };
+  if (instErr) {
+    console.error("[importar] erro ao gravar parcelas:", instErr.code);
+    return { error: "Erro ao salvar os lançamentos. Tente novamente." };
+  }
 
   const { error: invErr } = await supabase
     .from("invoices")
     .upsert([rows.invoice], { onConflict: "card_id,reference_month", ignoreDuplicates: true });
-  if (invErr) return { error: invErr.message };
+  if (invErr) {
+    console.error("[importar] erro ao upsert fatura:", invErr.code);
+    return { error: "Erro ao salvar os lançamentos. Tente novamente." };
+  }
+
+  // Cria RecurringExpense para itens marcados como recorrente.
+  const recurringItems = items
+    .map((it, i) => ({ it, validated: validated[i] }))
+    .filter(({ it }) => it.mark_as_recurring);
+
+  if (recurringItems.length > 0) {
+    const recurringRows = recurringItems.map(({ it, validated: v }) => ({
+      user_id: user.id,
+      card_id: card_id,
+      account_id: null,
+      category_id: v.categoryId,
+      description: v.description,
+      amount_cents: v.amountCents,
+      // Dia de cobrança = dia da compra; fácil de ajustar depois na tela de Recorrentes.
+      billing_day: parseInt(it.purchase_date.slice(8, 10), 10),
+      start_month: reference_month,
+      end_month: null,
+      active: true,
+    }));
+    const { error: recErr } = await supabase.from("recurring_expenses").insert(recurringRows);
+    if (recErr) return { error: recErr.message };
+  }
 
   revalidatePath("/", "layout");
   // Retorna sucesso (não redirect): a navegação é client-side no componente, o

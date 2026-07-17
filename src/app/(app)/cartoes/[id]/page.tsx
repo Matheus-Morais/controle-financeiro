@@ -118,7 +118,7 @@ export default async function CartaoDetailPage({
         </div>
       </div>
 
-      <InvoiceTabs groups={groups} />
+      <InvoiceTabs groups={groups} currentMonth={refMonth} />
     </div>
   );
 }

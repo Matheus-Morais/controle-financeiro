@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Spinner } from "@/components/loader";
+import { Spinner, WaveformLoader } from "@/components/loader";
 import { formatCents, parseBRLToCents } from "@/lib/money";
 import {
   dedupeKey,
@@ -14,6 +14,7 @@ import {
   type ExtractedTipo,
 } from "@/lib/invoice-import";
 import { getExistingInvoiceKeys, importarGastosDaFatura } from "@/app/(app)/gastos/importar/actions";
+import { ConfirmCardModal } from "@/components/confirm-card-modal";
 
 const MAX_BYTES = 4 * 1024 * 1024;
 
@@ -39,6 +40,8 @@ interface EditableItem {
   importable: boolean;
   include: boolean;
   duplicate: boolean;
+  suggestedRecurring: boolean; // IA sinalizou como provável recorrente
+  markAsRecurring: boolean; // usuário quer criar como recorrente
 }
 
 const TIPO_LABEL: Record<ExtractedTipo, string> = {
@@ -62,6 +65,8 @@ function toEditableItems(inv: ExtractedInvoice, categories: Category[]): Editabl
     importable: isImportable(it.tipo),
     include: isImportable(it.tipo),
     duplicate: false,
+    suggestedRecurring: it.sugerido_recorrente,
+    markAsRecurring: false,
   }));
 }
 
@@ -84,9 +89,18 @@ export function ImportInvoice({
 
   const [extracted, setExtracted] = useState<ExtractedInvoice | null>(null);
   const [items, setItems] = useState<EditableItem[]>([]);
+  const [cardsList, setCardsList] = useState<Card[]>(cards);
   const [cardId, setCardId] = useState("");
   const [referenceMonth, setReferenceMonth] = useState(currentMonth);
   const [existingKeys, setExistingKeys] = useState<Set<string>>(new Set());
+
+  // Cartão veio de um match confiável (últimos 4 dígitos do PDF) ou de um
+  // fallback (nenhum cartão bateu, caiu no primeiro da lista)? No segundo caso
+  // exigimos confirmação antes de gravar — é onde o usuário costuma esquecer
+  // de trocar o cartão errado. Trocar manualmente também conta como confiável.
+  const [cardConfident, setCardConfident] = useState(false);
+  const [detectedDigits, setDetectedDigits] = useState<string | null>(null);
+  const [showCardConfirm, setShowCardConfirm] = useState(false);
 
   const [saveState, saveAction, saving] = useActionState(importarGastosDaFatura, undefined);
   const [navigating, setNavigating] = useState(false);
@@ -157,10 +171,12 @@ export function ImportInvoice({
       setExtracted(inv);
       setItems(toEditableItems(inv, categories));
 
-      // Cartão: casa pelos últimos 4 dígitos, senão o primeiro.
-      const digits = inv.ult4_digitos?.replace(/\D/g, "").slice(-4);
-      const matched = digits ? cards.find((c) => c.last_four === digits) : undefined;
-      setCardId(matched?.id ?? cards[0]?.id ?? "");
+      // Cartão: casa pelos últimos 4 dígitos, senão o primeiro (fallback, exige confirmação).
+      const digits = inv.ult4_digitos?.replace(/\D/g, "").slice(-4) || null;
+      const matched = digits ? cardsList.find((c) => c.last_four === digits) : undefined;
+      setCardId(matched?.id ?? cardsList[0]?.id ?? "");
+      setCardConfident(!!matched);
+      setDetectedDigits(digits);
 
       // Competência: da sugestão (YYYY-MM), senão o mês corrente.
       const sug = inv.competencia_sugerida;
@@ -178,12 +194,14 @@ export function ImportInvoice({
     () => parseBRLToCents(extracted?.total_fatura ?? ""),
     [extracted],
   );
+  // Reconciliação: soma apenas compras/encargos/outros e estornos (sinal negativo).
+  // Pagamentos de fatura anterior são excluídos — o total_fatura impresso não os inclui.
   const signedSum = useMemo(
     () =>
       items.reduce((s, it) => {
+        if (it.tipo === "pagamento") return s;
         const c = parseBRLToCents(it.valorBrl) ?? 0;
-        const credit = it.tipo === "credito" || it.tipo === "pagamento";
-        return s + (credit ? -c : c);
+        return s + (it.tipo === "credito" ? -c : c);
       }, 0),
     [items],
   );
@@ -196,6 +214,14 @@ export function ImportInvoice({
 
   function handleSave() {
     if (!cardId || included.length === 0 || hasInvalid) return;
+    if (!cardConfident) {
+      setShowCardConfirm(true);
+      return;
+    }
+    doSave();
+  }
+
+  function doSave() {
     saveAction({
       card_id: cardId,
       reference_month: referenceMonth,
@@ -206,6 +232,7 @@ export function ImportInvoice({
         purchase_date: it.purchaseDate,
         category_id: it.categoryId || "",
         parcela: it.parcela,
+        mark_as_recurring: it.markAsRecurring,
       })),
     });
   }
@@ -213,7 +240,16 @@ export function ImportInvoice({
   // ── Fase 1: upload ──────────────────────────────────────────────────────
   if (phase === "upload") {
     return (
-      <form onSubmit={handleUpload} className="flex flex-col gap-4">
+      <form onSubmit={handleUpload} className="relative flex flex-col gap-4">
+        {/* overlay de análise da IA */}
+        {uploading && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 rounded-2xl bg-white/90 backdrop-blur-sm dark:bg-neutral-950/90">
+            <WaveformLoader size={48} color="var(--color-brand, #6366f1)" speed={0.9} />
+            <p className="text-sm font-medium text-neutral-600 dark:text-neutral-300">
+              Analisando sua fatura…
+            </p>
+          </div>
+        )}
         <p className="text-sm text-neutral-500">
           Envie o PDF da fatura do cartão. Os lançamentos são lidos por IA e você revisa tudo antes
           de salvar.
@@ -236,8 +272,7 @@ export function ImportInvoice({
           disabled={!file || uploading}
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-3 font-semibold text-white transition active:scale-[0.98] disabled:opacity-60"
         >
-          {uploading && <Spinner size={18} />}
-          {uploading ? "Lendo a fatura…" : "Ler fatura"}
+          Ler fatura
         </button>
       </form>
     );
@@ -251,10 +286,13 @@ export function ImportInvoice({
           Cartão
           <select
             value={cardId}
-            onChange={(e) => setCardId(e.target.value)}
+            onChange={(e) => {
+              setCardId(e.target.value);
+              setCardConfident(true);
+            }}
             className="rounded-xl border border-neutral-300 bg-white px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-900"
           >
-            {cards.map((c) => (
+            {cardsList.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
                 {c.last_four ? ` ••${c.last_four}` : ""}
@@ -336,6 +374,19 @@ export function ImportInvoice({
                     {it.duplicate && " · já importado"}
                   </p>
 
+                  {it.suggestedRecurring && it.importable && (
+                    <button
+                      type="button"
+                      onClick={() => updateItem(it.id, { markAsRecurring: !it.markAsRecurring })}
+                      className={`mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium transition ${
+                        it.markAsRecurring
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
+                          : "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
+                      }`}
+                    >
+                      {it.markAsRecurring ? "✓ Recorrente" : "↻ Recorrente?"}
+                    </button>
+                  )}
                   {it.importable && (
                     <div className="mt-2 grid grid-cols-2 gap-2">
                       <input
@@ -389,6 +440,25 @@ export function ImportInvoice({
             ? "Redirecionando…"
             : `Importar ${included.length} lançamento${included.length === 1 ? "" : "s"}`}
       </button>
+
+      {showCardConfirm && (
+        <ConfirmCardModal
+          cards={cardsList}
+          cardId={cardId}
+          onChangeCardId={setCardId}
+          detectedDigits={detectedDigits}
+          onCancel={() => setShowCardConfirm(false)}
+          onConfirm={() => {
+            setCardConfident(true);
+            setShowCardConfirm(false);
+            doSave();
+          }}
+          onCardCreated={(card) => {
+            setCardsList((prev) => [...prev, card]);
+            setCardId(card.id);
+          }}
+        />
+      )}
     </div>
   );
 }
