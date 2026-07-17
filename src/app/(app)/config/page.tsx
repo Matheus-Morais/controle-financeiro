@@ -1,4 +1,5 @@
-import { Download, LogOut } from "lucide-react";
+import Link from "next/link";
+import { ChevronRight, Download, LogOut, Tags } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/(auth)/actions";
 import { NotificationSettings } from "@/components/notification-settings";
@@ -26,6 +27,15 @@ export default async function ConfigPage() {
       </section>
 
       <InstallPrompt />
+
+      <Link
+        href="/config/categorias"
+        className="flex items-center gap-2 rounded-2xl bg-white p-4 text-sm font-medium shadow-sm dark:bg-neutral-900"
+      >
+        <Tags size={18} className="text-brand" />
+        <span className="flex-1">Categorias dos gastos</span>
+        <ChevronRight size={18} className="text-neutral-400" />
+      </Link>
 
       <NotificationSettings
         initialWeeklyDay={profile?.weekly_reminder_day ?? 1}
