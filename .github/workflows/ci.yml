@@ -45,6 +45,10 @@ jobs:
     # Roda apenas em PRs para a main, após o CI passar.
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
     needs: ci
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -56,13 +60,11 @@ jobs:
       #   SUPABASE_ACCESS_TOKEN  → token pessoal (supabase.com/dashboard/account/tokens)
       #   SUPABASE_DB_PASSWORD   → senha do banco de staging
       #   SUPABASE_PROJECT_REF   → ref do projeto de staging (ex.: abcdefghijklmnop)
+      # O `secrets` não pode ser usado em `if`; por isso o teste é feito
+      # sobre a env var (mapeada no nível do job acima).
       - name: Aplicar migrations no staging
-        if: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}
+        if: env.SUPABASE_ACCESS_TOKEN != ''
         run: |
           supabase db push \
             --project-ref "$SUPABASE_PROJECT_REF" \
             --password "$SUPABASE_DB_PASSWORD"
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
