@@ -1,26 +1,13 @@
 "use client";
 
 import { useActionState } from "react";
-import { useFormStatus } from "react-dom";
+import { SubmitButton } from "@/components/submit-button";
 import type { Card } from "@/types/database";
 
 type ActionState = { error?: string } | undefined;
 type Action = (prev: ActionState, formData: FormData) => Promise<ActionState>;
 
 const COLORS = ["#16a34a", "#0ea5e9", "#8b5cf6", "#ef4444", "#f97316", "#ec4899", "#64748b"];
-
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="w-full rounded-xl bg-brand py-3 font-semibold text-white active:scale-[0.98] disabled:opacity-60"
-    >
-      {pending ? "Salvando…" : "Salvar cartão"}
-    </button>
-  );
-}
 
 export function CardForm({ action, card }: { action: Action; card?: Card }) {
   const [state, formAction] = useActionState(action, undefined);
@@ -109,7 +96,7 @@ export function CardForm({ action, card }: { action: Action; card?: Card }) {
       </fieldset>
 
       {state?.error && <p className="text-sm text-red-600">{state.error}</p>}
-      <SubmitButton />
+      <SubmitButton pendingLabel="Salvando…">Salvar cartão</SubmitButton>
     </form>
   );
 }

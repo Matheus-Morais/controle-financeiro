@@ -87,6 +87,8 @@ export type Transaction = Timestamps & {
   purchase_date: string;
   installments_count: number;
   notes: string | null;
+  /** Nome bruto como aparece na fatura (só em gastos importados; null se manual). */
+  statement_description: string | null;
 };
 
 export type Installment = Timestamps & {

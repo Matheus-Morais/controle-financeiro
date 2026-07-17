@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { formatCents, parseBRLToCents } from "@/lib/money";
+import { Spinner } from "@/components/loader";
 import { saveBudget } from "@/app/(app)/orcamento/actions";
 
 export function BudgetRow({
@@ -56,7 +57,11 @@ export function BudgetRow({
           Gasto: <b className={over ? "text-red-500" : ""}>{formatCents(spentCents)}</b>
           {savedLimit > 0 && ` de ${formatCents(savedLimit)}`}
         </span>
-        {pending && <span className="text-neutral-400">salvando…</span>}
+        {pending && (
+          <span className="flex items-center gap-1 text-neutral-400">
+            <Spinner size={12} /> salvando…
+          </span>
+        )}
       </div>
 
       {savedLimit > 0 && (

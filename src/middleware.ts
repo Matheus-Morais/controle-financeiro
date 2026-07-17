@@ -55,8 +55,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Ignora estáticos, imagens, o service worker e o manifest.
+  // Ignora estáticos, imagens, o service worker, o manifest e a logo.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|icons/).*)",
+    "/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|icons/|logo.svg|logo-maskable.svg).*)",
   ],
 };

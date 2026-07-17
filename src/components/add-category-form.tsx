@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef } from "react";
 import { useFormStatus } from "react-dom";
 import { Plus } from "lucide-react";
+import { Spinner } from "@/components/loader";
 
 type ActionState = { error?: string; ok?: boolean } | undefined;
 type Action = (prev: ActionState, formData: FormData) => Promise<ActionState>;
@@ -15,7 +16,7 @@ function AddButton() {
       disabled={pending}
       className="flex items-center gap-1 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
     >
-      <Plus size={16} /> Add
+      {pending ? <Spinner size={16} /> : <Plus size={16} />} Add
     </button>
   );
 }

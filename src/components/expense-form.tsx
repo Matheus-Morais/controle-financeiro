@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
-import { useFormStatus } from "react-dom";
+import { SubmitButton } from "@/components/submit-button";
 import { parseBRLToCents } from "@/lib/money";
 
 type ActionState = { error?: string } | undefined;
@@ -12,63 +12,27 @@ interface Option {
   name: string;
 }
 
-/** Valores para pré-preencher o form ao editar um gasto existente. */
-export interface ExpenseDefaults {
-  description: string;
-  amountCents: number;
-  /** Origem no formato "card:<id>" ou "account:<id>". */
-  source: string;
-  kind: "single" | "installment";
-  installmentsCount: number;
-  categoryId: string | null;
-  purchaseDate: string;
-}
-
-/** Formata centavos para o input pt-BR sem símbolo de moeda: 123456 → "1.234,56". */
-function centsToInput(cents: number): string {
-  return (cents / 100).toLocaleString("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-function SubmitButton({ editing }: { editing: boolean }) {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="w-full rounded-xl bg-brand py-3 font-semibold text-white active:scale-[0.98] disabled:opacity-60"
-    >
-      {pending ? "Salvando…" : editing ? "Salvar alterações" : "Salvar gasto"}
-    </button>
-  );
-}
-
 export function ExpenseForm({
   action,
   cards,
   accounts,
   categories,
   today,
-  expense,
 }: {
   action: Action;
   cards: Option[];
   accounts: Option[];
   categories: Option[];
   today: string;
-  expense?: ExpenseDefaults;
 }) {
   const [state, formAction] = useActionState(action, undefined);
-  const [amount, setAmount] = useState(expense ? centsToInput(expense.amountCents) : "");
-  const [kind, setKind] = useState<"single" | "installment">(expense?.kind ?? "single");
+  const [amount, setAmount] = useState("");
+  const [kind, setKind] = useState<"single" | "installment">("single");
 
   const cents = useMemo(() => parseBRLToCents(amount) ?? 0, [amount]);
 
   const defaultSource =
-    expense?.source ??
-    (cards[0] ? `card:${cards[0].id}` : accounts[0] ? `account:${accounts[0].id}` : "");
+    cards[0] ? `card:${cards[0].id}` : accounts[0] ? `account:${accounts[0].id}` : "";
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
@@ -77,7 +41,6 @@ export function ExpenseForm({
         <input
           name="description"
           required
-          defaultValue={expense?.description}
           placeholder="Ex.: Mercado do mês"
           className="rounded-xl border border-neutral-300 bg-white px-3 py-3 dark:border-neutral-700 dark:bg-neutral-900"
         />
@@ -153,7 +116,7 @@ export function ExpenseForm({
             type="number"
             min={2}
             max={72}
-            defaultValue={expense && expense.kind === "installment" ? expense.installmentsCount : 2}
+            defaultValue={2}
             className="rounded-xl border border-neutral-300 bg-white px-3 py-3 dark:border-neutral-700 dark:bg-neutral-900"
           />
           {cents > 0 && (
@@ -166,7 +129,7 @@ export function ExpenseForm({
         Categoria (opcional)
         <select
           name="category_id"
-          defaultValue={expense?.categoryId ?? ""}
+          defaultValue=""
           className="rounded-xl border border-neutral-300 bg-white px-3 py-3 dark:border-neutral-700 dark:bg-neutral-900"
         >
           <option value="">Sem categoria</option>
@@ -184,13 +147,13 @@ export function ExpenseForm({
           name="purchase_date"
           type="date"
           required
-          defaultValue={expense?.purchaseDate ?? today}
+          defaultValue={today}
           className="rounded-xl border border-neutral-300 bg-white px-3 py-3 dark:border-neutral-700 dark:bg-neutral-900"
         />
       </label>
 
       {state?.error && <p className="text-sm text-red-600">{state.error}</p>}
-      <SubmitButton editing={!!expense} />
+      <SubmitButton pendingLabel="Salvando…">Salvar gasto</SubmitButton>
     </form>
   );
 }

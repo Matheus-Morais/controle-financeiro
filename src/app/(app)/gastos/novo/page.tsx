@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileUp } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { todayISO } from "@/lib/date";
 import { ExpenseForm } from "@/components/expense-form";
@@ -24,6 +24,17 @@ export default async function NovoGastoPage() {
         </Link>
         <h1 className="text-2xl font-bold">Adicionar gasto</h1>
       </div>
+
+      {(cards?.length ?? 0) > 0 && (
+        <Link
+          href="/gastos/importar"
+          className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm shadow-sm dark:border-neutral-800 dark:bg-neutral-900"
+        >
+          <FileUp size={18} className="text-brand" />
+          <span className="flex-1">Importar fatura do cartão (PDF)</span>
+          <ChevronRight size={18} className="text-neutral-400" />
+        </Link>
+      )}
 
       {hasSource ? (
         <ExpenseForm
