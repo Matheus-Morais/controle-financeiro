@@ -45,9 +45,11 @@ export async function createOnboardingCard(
   return { card: data };
 }
 
-type IncomeActionState = { error?: string; ok?: boolean; amountCents?: number } | undefined;
+type IncomeActionState =
+  | { error?: string; income?: { id: string; description: string; amountCents: number } }
+  | undefined;
 
-/** Registra a renda recorrente informada no onboarding. Não redireciona. */
+/** Registra uma renda recorrente informada no onboarding. Não redireciona — o wizard controla a navegação. */
 export async function saveOnboardingIncome(
   _prev: IncomeActionState,
   formData: FormData,
@@ -65,22 +67,26 @@ export async function saveOnboardingIncome(
   const [y, m0] = ymd(i.receipt_date);
   const referenceMonth = toISO(y, m0, 1);
 
-  const { error } = await supabase.from("incomes").insert({
-    user_id: user.id,
-    description: i.description,
-    amount_cents: i.amount_cents,
-    receipt_date: i.receipt_date,
-    reference_month: referenceMonth,
-    is_recurring: true,
-    recurring_mode: "day_of_month",
-    recurring_day: i.recurring_day ?? Number(i.receipt_date.slice(8, 10)),
-    recurring_business_day: null,
-  });
+  const { data, error } = await supabase
+    .from("incomes")
+    .insert({
+      user_id: user.id,
+      description: i.description,
+      amount_cents: i.amount_cents,
+      receipt_date: i.receipt_date,
+      reference_month: referenceMonth,
+      is_recurring: true,
+      recurring_mode: "day_of_month",
+      recurring_day: i.recurring_day ?? Number(i.receipt_date.slice(8, 10)),
+      recurring_business_day: null,
+    })
+    .select("id, description, amount_cents")
+    .single();
   if (error) return { error: error.message };
 
   revalidatePath("/recebimentos");
   revalidatePath("/");
-  return { ok: true, amountCents: i.amount_cents };
+  return { income: { id: data.id, description: data.description, amountCents: data.amount_cents } };
 }
 
 /** Marca o onboarding como concluído (ou pulado) e manda para o dashboard. */
