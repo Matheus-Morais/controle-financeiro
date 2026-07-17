@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Spinner } from "@/components/loader";
 import { formatCents, parseBRLToCents } from "@/lib/money";
 import {
@@ -8,6 +9,7 @@ import {
   isImportable,
   matchCategoryByName,
   reconcile,
+  stripInstallmentSuffix,
   type ExtractedInvoice,
   type ExtractedTipo,
 } from "@/lib/invoice-import";
@@ -28,11 +30,12 @@ interface Category {
 interface EditableItem {
   id: string;
   statementDescription: string; // nome bruto da fatura (imutável, usado na dedupe)
-  description: string; // nome amigável (editável, pré-preenchido com o bruto)
+  description: string; // nome amigável (editável, sem o token de parcela)
   valorBrl: string; // editável
   purchaseDate: string; // YYYY-MM-DD, editável
   categoryId: string; // "" ou uuid
   tipo: ExtractedTipo;
+  parcela: { atual: number; total: number } | null; // parcela lida da fatura
   importable: boolean;
   include: boolean;
   duplicate: boolean;
@@ -50,11 +53,12 @@ function toEditableItems(inv: ExtractedInvoice, categories: Category[]): Editabl
   return inv.itens.map((it, i) => ({
     id: `it-${i}`,
     statementDescription: it.descricao,
-    description: it.descricao,
+    description: stripInstallmentSuffix(it.descricao, it.parcela),
     valorBrl: it.valor_brl,
     purchaseDate: it.data,
     categoryId: matchCategoryByName(it.categoria_sugerida, categories) ?? "",
     tipo: it.tipo,
+    parcela: it.parcela,
     importable: isImportable(it.tipo),
     include: isImportable(it.tipo),
     duplicate: false,
@@ -85,6 +89,23 @@ export function ImportInvoice({
   const [existingKeys, setExistingKeys] = useState<Set<string>>(new Set());
 
   const [saveState, saveAction, saving] = useActionState(importarGastosDaFatura, undefined);
+  const [navigating, setNavigating] = useState(false);
+  const router = useRouter();
+  const navigated = useRef(false);
+
+  // Navegação client-side após gravar. A Server Action RETORNA `{ ok }` em vez de
+  // redirecionar: assim o `saving` (pending) resolve na hora e o spinner some,
+  // evitando o "roda infinito" (o redirect no servidor prendia a transição).
+  useEffect(() => {
+    if (saveState?.ok && !navigated.current) {
+      navigated.current = true;
+      setNavigating(true);
+      router.replace(`/cartoes/${saveState.cardId}?mes=${saveState.referenceMonth}`);
+      // Fallback: se a navegação travar por 10s, devolve o controle ao usuário.
+      const t = setTimeout(() => setNavigating(false), 10_000);
+      return () => clearTimeout(t);
+    }
+  }, [saveState, router]);
 
   // Busca as chaves já importadas quando muda cartão/competência.
   useEffect(() => {
@@ -184,6 +205,7 @@ export function ImportInvoice({
         valor_brl: it.valorBrl,
         purchase_date: it.purchaseDate,
         category_id: it.categoryId || "",
+        parcela: it.parcela,
       })),
     });
   }
@@ -304,6 +326,11 @@ export function ImportInvoice({
                     className={`w-full ${inputClass}`}
                     placeholder="Nome do gasto"
                   />
+                  {it.parcela && (
+                    <span className="mt-1 inline-block rounded bg-brand/10 px-1.5 py-0.5 text-[11px] font-medium text-brand">
+                      Parcela {it.parcela.atual}/{it.parcela.total}
+                    </span>
+                  )}
                   <p className="mt-0.5 truncate text-[11px] text-neutral-400">
                     {it.statementDescription}
                     {it.duplicate && " · já importado"}
@@ -352,13 +379,15 @@ export function ImportInvoice({
 
       <button
         onClick={handleSave}
-        disabled={saving || included.length === 0 || !cardId || hasInvalid}
+        disabled={saving || navigating || saveState?.ok || included.length === 0 || !cardId || hasInvalid}
         className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-3 font-semibold text-white transition active:scale-[0.98] disabled:opacity-60"
       >
-        {saving && <Spinner size={18} />}
+        {(saving || navigating) && <Spinner size={18} />}
         {saving
           ? "Salvando…"
-          : `Importar ${included.length} lançamento${included.length === 1 ? "" : "s"}`}
+          : navigating
+            ? "Redirecionando…"
+            : `Importar ${included.length} lançamento${included.length === 1 ? "" : "s"}`}
       </button>
     </div>
   );

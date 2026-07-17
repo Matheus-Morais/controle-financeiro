@@ -2,7 +2,6 @@
 
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { parseBRLToCents } from "@/lib/money";
 import {
@@ -12,7 +11,9 @@ import {
   type ValidatedImportItem,
 } from "@/lib/invoice-import";
 
-type ActionState = { error?: string } | undefined;
+type ActionState =
+  | { error?: string; ok?: boolean; cardId?: string; referenceMonth?: string }
+  | undefined;
 
 /**
  * Grava os lançamentos revisados de uma fatura como gastos no cartão. Cada item
@@ -52,6 +53,12 @@ export async function importarGastosDaFatura(
       return { error: `Valor inválido em "${it.description}".` };
     }
     const categoryId = it.category_id && ownCategories.has(it.category_id) ? it.category_id : null;
+    // Só vira parcela se os números fizerem sentido (2+ parcelas, atual no intervalo).
+    const p = it.parcela;
+    const installment =
+      p && p.total >= 2 && p.atual >= 1 && p.atual <= p.total
+        ? { number: p.atual, count: p.total }
+        : null;
     validated.push({
       id: randomUUID(),
       description: it.description,
@@ -59,6 +66,7 @@ export async function importarGastosDaFatura(
       amountCents,
       purchaseDate: it.purchase_date,
       categoryId,
+      installment,
     });
   }
 
@@ -77,12 +85,15 @@ export async function importarGastosDaFatura(
   const { error: instErr } = await supabase.from("installments").insert(rows.installments);
   if (instErr) return { error: instErr.message };
 
-  await supabase
+  const { error: invErr } = await supabase
     .from("invoices")
     .upsert([rows.invoice], { onConflict: "card_id,reference_month", ignoreDuplicates: true });
+  if (invErr) return { error: invErr.message };
 
   revalidatePath("/", "layout");
-  redirect(`/cartoes/${card_id}?mes=${reference_month}`);
+  // Retorna sucesso (não redirect): a navegação é client-side no componente, o
+  // que resolve o pending na hora e evita o spinner preso no mobile.
+  return { ok: true, cardId: card_id, referenceMonth: reference_month };
 }
 
 /**

@@ -76,7 +76,7 @@ function systemPrompt(categoryNames: string[]): string {
     '- valor_brl: o valor como impresso, em texto (ex.: "1.234,56"). Não faça conta.',
     "- data: a data da compra em YYYY-MM-DD. Infira o ano pelo período/competência da fatura; atenção à virada dezembro→janeiro.",
     "- tipo: 'compra' para gastos comuns; 'credito' para estornos/créditos; 'pagamento' para 'pagamento de fatura'/'pagamento recebido'; 'encargo' para juros, multa, IOF, anuidade, seguro; 'outro' para o que não se encaixar.",
-    "- parcela: se a linha indicar parcelamento tipo '03/10', retorne {atual:3,total:10}; senão null.",
+    "- parcela: se a linha indicar parcelamento em QUALQUER formato — '03/10', '3/10', '(1/4)', '1 de 4', 'PARC 01/04' — retorne {atual, total} (ex.: '(1/4)' → {atual:1,total:4}); senão null. Mantenha a descricao como impressa (com o '(1/4)'); nós tratamos o título.",
     "- categoria_sugerida: escolha UMA destas categorias do usuário quando fizer sentido, senão null. Categorias: " +
       cats +
       ".",
