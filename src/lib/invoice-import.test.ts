@@ -89,6 +89,7 @@ describe("buildImportRows", () => {
       purchaseDate: "2026-07-05",
       categoryId: "c-alim",
       installment: null,
+      recurringId: null,
     },
     {
       id: "t2",
@@ -99,6 +100,7 @@ describe("buildImportRows", () => {
       purchaseDate: "2026-07-28",
       categoryId: "c-transp",
       installment: null,
+      recurringId: null,
     },
   ];
   const ctx = {
@@ -154,6 +156,7 @@ describe("buildImportRows", () => {
         purchaseDate: "2026-07-10",
         categoryId: null,
         installment: { number: 1, count: 4 },
+        recurringId: null,
       },
     ];
     const { transactions, installments } = buildImportRows(parc, ctx);
@@ -164,6 +167,36 @@ describe("buildImportRows", () => {
     });
     expect(installments).toHaveLength(1); // não espalha as parcelas futuras
     expect(installments[0]).toMatchObject({ number: 1, amount_cents: 5000, reference_month: "2026-07-01" });
+  });
+
+  it("item marcado como recorrente nasce 'recurring' com recurring_id na competência forçada", () => {
+    const rec: ValidatedImportItem[] = [
+      {
+        id: "r1",
+        description: "Netflix",
+        statementDescription: "NETFLIX.COM",
+        amountCents: 3990,
+        purchaseDate: "2026-07-15",
+        categoryId: "c-alim",
+        // Mesmo com parcela detectada, recorrência tem prioridade e ignora a parcela.
+        installment: { number: 2, count: 12 },
+        recurringId: "rec-abc",
+      },
+    ];
+    const { transactions, installments } = buildImportRows(rec, ctx);
+    expect(transactions[0]).toMatchObject({
+      kind: "recurring",
+      recurring_id: "rec-abc",
+      installments_count: 1,
+      description: "Netflix",
+    });
+    expect(installments).toHaveLength(1);
+    expect(installments[0]).toMatchObject({ number: 1, amount_cents: 3990, reference_month: "2026-07-01" });
+  });
+
+  it("mantém recurring_id null nos itens comuns", () => {
+    const { transactions } = buildImportRows(items, ctx);
+    expect(transactions.every((t) => t.recurring_id === null)).toBe(true);
   });
 });
 

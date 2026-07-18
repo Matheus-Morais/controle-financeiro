@@ -247,6 +247,14 @@ export interface ValidatedImportItem {
    * `null` = à vista. Não gera as parcelas futuras — cada fatura traz a sua.
    */
   installment: { number: number; count: number } | null;
+  /**
+   * Id do `recurring_expense` (template) quando o item foi marcado como recorrente
+   * na revisão. `null` = gasto comum. Quando presente, a transação nasce com
+   * `kind = "recurring"` e `recurring_id` apontando para o template — assim cai na
+   * aba "Recorrente" da própria fatura, não em "À vista". `installment` é ignorado
+   * (assinatura não é parcela).
+   */
+  recurringId: string | null;
 }
 
 export interface ImportContext {
@@ -263,8 +271,9 @@ export interface TransactionRow {
   card_id: string;
   account_id: null;
   category_id: string | null;
+  recurring_id: string | null;
   description: string;
-  kind: "single" | "installment";
+  kind: "single" | "installment" | "recurring";
   total_amount_cents: number;
   purchase_date: string;
   installments_count: number;
@@ -313,11 +322,13 @@ export function buildImportRows(items: ValidatedImportItem[], ctx: ImportContext
     card_id: ctx.cardId,
     account_id: null,
     category_id: it.categoryId,
+    recurring_id: it.recurringId,
     description: it.description,
-    kind: it.installment ? "installment" : "single",
+    // Recorrente vence parcela: item marcado como recorrente nasce `recurring`.
+    kind: it.recurringId ? "recurring" : it.installment ? "installment" : "single",
     total_amount_cents: it.amountCents,
     purchase_date: it.purchaseDate,
-    installments_count: it.installment ? it.installment.count : 1,
+    installments_count: it.recurringId ? 1 : it.installment ? it.installment.count : 1,
     notes: null,
     statement_description: it.statementDescription,
   }));
@@ -327,7 +338,7 @@ export function buildImportRows(items: ValidatedImportItem[], ctx: ImportContext
     transaction_id: it.id,
     card_id: ctx.cardId,
     account_id: null,
-    number: it.installment ? it.installment.number : 1,
+    number: !it.recurringId && it.installment ? it.installment.number : 1,
     amount_cents: it.amountCents,
     reference_month: ctx.referenceMonth,
     status: "open",
