@@ -42,7 +42,11 @@ export async function createCard(_prev: ActionState, formData: FormData): Promis
 }
 
 type InlineCardState =
-  | { error?: string; ok?: boolean; card?: { id: string; name: string; last_four: string | null } }
+  | {
+      error?: string;
+      ok?: boolean;
+      card?: { id: string; name: string; last_four: string | null; color: string | null };
+    }
   | undefined;
 
 /**
@@ -68,7 +72,7 @@ export async function createCardInline(
   const { data, error } = await supabase
     .from("cards")
     .insert(cardInsertPayload(user.id, parsed.data))
-    .select("id, name, last_four")
+    .select("id, name, last_four, color")
     .single();
   if (error) return { error: error.message };
 

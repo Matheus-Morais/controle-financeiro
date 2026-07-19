@@ -11,7 +11,7 @@ export default async function ImportarFaturaPage() {
   const supabase = await createClient();
 
   const [{ data: cards }, { data: categories }] = await Promise.all([
-    supabase.from("cards").select("id, name, last_four").eq("active", true).order("created_at"),
+    supabase.from("cards").select("id, name, last_four, color").eq("active", true).order("created_at"),
     supabase.from("categories").select("id, name").order("name"),
   ]);
 
