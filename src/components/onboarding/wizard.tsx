@@ -14,6 +14,7 @@ import { StepFinal } from "./step-final";
 const TOTAL_STEPS = 6;
 
 type CardSummary = { id: string; name: string; color: string | null };
+type IncomeSummary = { id: string; description: string; amountCents: number };
 
 export function OnboardingWizard({
   displayName,
@@ -27,8 +28,10 @@ export function OnboardingWizard({
   const [step, setStep] = useState(0);
   const [categories, setCategories] = useState<ManagedCategory[]>(initialCategories);
   const [cards, setCards] = useState<CardSummary[]>([]);
-  const [incomeCents, setIncomeCents] = useState<number | null>(null);
+  const [incomes, setIncomes] = useState<IncomeSummary[]>([]);
   const [budgetedCount, setBudgetedCount] = useState(0);
+
+  const totalIncomeCents = incomes.reduce((sum, i) => sum + i.amountCents, 0);
 
   const isFirst = step === 0;
   const isLast = step === TOTAL_STEPS - 1;
@@ -75,11 +78,10 @@ export function OnboardingWizard({
         {step === 1 && (
           <StepIncome
             today={todayISODate}
+            incomes={incomes}
+            onIncomesChange={setIncomes}
             onBack={back}
-            onNext={(cents) => {
-              setIncomeCents(cents);
-              next();
-            }}
+            onNext={next}
           />
         )}
 
@@ -109,7 +111,7 @@ export function OnboardingWizard({
 
         {step === 5 && (
           <StepFinal
-            incomeCents={incomeCents}
+            incomeCents={totalIncomeCents > 0 ? totalIncomeCents : null}
             cardsCount={cards.length}
             categoriesCount={categories.length}
             budgetedCount={budgetedCount}
