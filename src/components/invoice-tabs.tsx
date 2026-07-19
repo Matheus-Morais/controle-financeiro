@@ -59,6 +59,7 @@ export function InvoiceTabs({
         })}
       </div>
 
+      <div key={`${active}-${currentMonth}`} className="animate-month-in motion-reduce:animate-none">
       {items.length === 0 ? (
         <p className="py-8 text-center text-sm text-neutral-500">
           Nenhum gasto {TABS.find((t) => t.key === active)?.label.toLowerCase()} neste mês.
@@ -105,6 +106,7 @@ export function InvoiceTabs({
           })}
         </ul>
       )}
+      </div>
     </div>
   );
 }

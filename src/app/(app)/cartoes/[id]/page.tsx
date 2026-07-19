@@ -105,7 +105,8 @@ export default async function CartaoDetailPage({
 
       {/* Resumo da fatura */}
       <div
-        className="rounded-2xl p-4 text-white shadow-sm"
+        key={refMonth}
+        className="animate-month-in rounded-2xl p-4 text-white shadow-sm motion-reduce:animate-none"
         style={{ backgroundColor: card.color ?? "#16a34a" }}
       >
         <p className="text-xs opacity-90">Total da fatura</p>
