@@ -20,6 +20,7 @@ const ACCOUNT_CLOSING_DAY = 31;
  */
 export async function updateExpense(
   id: string,
+  month: string | undefined,
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
@@ -133,13 +134,29 @@ export async function updateExpense(
   }
 
   revalidatePath("/", "layout");
-  redirect(source.kind === "card" ? `/cartoes/${source.id}` : "/");
+  redirect(
+    source.kind === "card"
+      ? `/cartoes/${source.id}${month ? `?mes=${month}` : ""}`
+      : "/",
+  );
 }
 
-export async function deleteExpense(id: string): Promise<void> {
+export async function deleteExpense(id: string, month?: string): Promise<void> {
   const supabase = await createClient();
+
+  // Descobre o cartão antes de excluir para voltar à tela que o usuário analisa.
+  const { data: tx } = await supabase
+    .from("transactions")
+    .select("card_id")
+    .eq("id", id)
+    .single();
+
   // As parcelas são removidas em cascata (FK ON DELETE CASCADE).
   await supabase.from("transactions").delete().eq("id", id);
   revalidatePath("/", "layout");
-  redirect("/");
+
+  const dest = tx?.card_id
+    ? `/cartoes/${tx.card_id}${month ? `?mes=${month}` : ""}`
+    : "/";
+  redirect(dest);
 }

@@ -16,6 +16,7 @@ import {
 } from "@/lib/invoice-import";
 import { getExistingInvoiceKeys, importarGastosDaFatura } from "@/app/(app)/gastos/importar/actions";
 import { ConfirmCardModal } from "@/components/confirm-card-modal";
+import { CardSelect } from "@/components/card-select";
 
 const MAX_BYTES = 4 * 1024 * 1024;
 
@@ -23,6 +24,7 @@ interface Card {
   id: string;
   name: string;
   last_four: string | null;
+  color: string | null;
 }
 interface Category {
   id: string;
@@ -300,21 +302,15 @@ export function ImportInvoice({
       <div className="grid grid-cols-2 gap-3">
         <label className="flex flex-col gap-1 text-sm text-neutral-500">
           Cartão
-          <select
+          <CardSelect
+            cards={cardsList}
             value={cardId}
-            onChange={(e) => {
-              setCardId(e.target.value);
+            onChange={(id) => {
+              setCardId(id);
               setCardConfident(true);
             }}
             className="rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-          >
-            {cardsList.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-                {c.last_four ? ` ••${c.last_four}` : ""}
-              </option>
-            ))}
-          </select>
+          />
         </label>
         <label className="flex flex-col gap-1 text-sm text-neutral-500">
           Competência
