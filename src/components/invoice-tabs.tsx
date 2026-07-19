@@ -70,7 +70,7 @@ export function InvoiceTabs({
             return (
               <li key={item.id} className="flex min-w-0 items-center gap-1">
                 <Link
-                  href={`/gastos/${item.transactionId}/editar`}
+                  href={`/gastos/${item.transactionId}/editar?mes=${currentMonth}`}
                   className="flex min-w-0 flex-1 items-center justify-between rounded-xl bg-white p-3 shadow-sm active:scale-[0.99] dark:bg-neutral-900"
                 >
                   <div className="min-w-0">
