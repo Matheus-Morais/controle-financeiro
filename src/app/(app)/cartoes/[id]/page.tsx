@@ -114,7 +114,14 @@ export default async function CartaoDetailPage({
           <span className="text-xs opacity-90">
             Vence em {dueDate.split("-").reverse().join("/")}
           </span>
-          {invoice && <InvoicePaidToggle invoiceId={invoice.id} paid={invoice.status === "paid"} />}
+          {invoice && (
+            <InvoicePaidToggle
+              invoiceId={invoice.id}
+              paid={invoice.status === "paid"}
+              cardId={id}
+              currentMonth={refMonth}
+            />
+          )}
         </div>
       </div>
 
