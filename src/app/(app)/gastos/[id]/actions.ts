@@ -140,23 +140,3 @@ export async function updateExpense(
       : "/",
   );
 }
-
-export async function deleteExpense(id: string, month?: string): Promise<void> {
-  const supabase = await createClient();
-
-  // Descobre o cartão antes de excluir para voltar à tela que o usuário analisa.
-  const { data: tx } = await supabase
-    .from("transactions")
-    .select("card_id")
-    .eq("id", id)
-    .single();
-
-  // As parcelas são removidas em cascata (FK ON DELETE CASCADE).
-  await supabase.from("transactions").delete().eq("id", id);
-  revalidatePath("/", "layout");
-
-  const dest = tx?.card_id
-    ? `/cartoes/${tx.card_id}${month ? `?mes=${month}` : ""}`
-    : "/";
-  redirect(dest);
-}

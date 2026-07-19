@@ -101,6 +101,8 @@ export type Installment = Timestamps & {
   amount_cents: number;
   reference_month: string;
   status: InstallmentStatus;
+  /** Marcado quando a parcela é "excluída" (soft-delete); null = ativa. */
+  deleted_at: string | null;
 };
 
 export type Invoice = Timestamps & {

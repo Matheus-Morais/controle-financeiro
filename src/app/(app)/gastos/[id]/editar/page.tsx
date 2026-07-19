@@ -4,8 +4,7 @@ import { ChevronLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { todayISO } from "@/lib/date";
 import { ExpenseForm, type ExpenseDefaults } from "@/components/expense-form";
-import { DeleteExpenseButton } from "@/components/delete-expense-button";
-import { deleteExpense, updateExpense } from "../actions";
+import { updateExpense } from "../actions";
 
 export default async function EditarGastoPage({
   params,
@@ -47,7 +46,6 @@ export default async function EditarGastoPage({
   };
 
   const updateWithId = updateExpense.bind(null, id, mes);
-  const deleteWithId = deleteExpense.bind(null, id, mes);
 
   // Voltar para o cartão que o usuário analisa (com o mês), ou home se for carteira.
   const backHref = tx.card_id ? `/cartoes/${tx.card_id}${mes ? `?mes=${mes}` : ""}` : "/";
@@ -70,7 +68,9 @@ export default async function EditarGastoPage({
         expense={expense}
       />
 
-      <DeleteExpenseButton action={deleteWithId} />
+      <p className="px-1 text-center text-xs text-neutral-500">
+        Para excluir, use o botão de lixeira no gasto, na tela do cartão.
+      </p>
     </div>
   );
 }

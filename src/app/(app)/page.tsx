@@ -48,7 +48,8 @@ export default async function DashboardPage() {
     const { data: allInst } = await supabase
       .from("installments")
       .select("card_id, reference_month, amount_cents")
-      .in("card_id", [...new Set(openInvoices.map((i) => i.card_id))]);
+      .in("card_id", [...new Set(openInvoices.map((i) => i.card_id))])
+      .is("deleted_at", null);
     for (const it of allInst ?? []) {
       const key = `${it.card_id}|${it.reference_month}`;
       invoiceTotals.set(key, (invoiceTotals.get(key) ?? 0) + it.amount_cents);

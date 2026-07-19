@@ -35,6 +35,7 @@ export async function GET() {
       supabase
         .from("installments")
         .select("number, amount_cents, reference_month, status, transaction_id, card_id, account_id")
+        .is("deleted_at", null)
         .order("reference_month"),
       supabase.from("transactions").select("id, description, kind, purchase_date, installments_count, category_id"),
       supabase.from("cards").select("id, name"),
