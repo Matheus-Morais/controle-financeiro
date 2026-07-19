@@ -129,7 +129,7 @@ export async function importarGastosDaFatura(
 
   const { error: invErr } = await supabase
     .from("invoices")
-    .upsert([rows.invoice], { onConflict: "card_id,reference_month", ignoreDuplicates: true });
+    .upsert(rows.invoices, { onConflict: "card_id,reference_month", ignoreDuplicates: true });
   if (invErr) {
     console.error("[importar] erro ao upsert fatura:", invErr.code);
     return { error: "Erro ao salvar os lançamentos. Tente novamente." };
@@ -161,7 +161,8 @@ export async function getExistingInvoiceKeys(
     .from("installments")
     .select("amount_cents, transaction_id")
     .eq("card_id", cardId)
-    .eq("reference_month", referenceMonth);
+    .eq("reference_month", referenceMonth)
+    .is("deleted_at", null);
 
   if (!installments?.length) return [];
 

@@ -19,7 +19,8 @@ export default async function CartoesPage() {
     .from("installments")
     .select("card_id, amount_cents")
     .eq("reference_month", refMonth)
-    .not("card_id", "is", null);
+    .not("card_id", "is", null)
+    .is("deleted_at", null);
 
   const totals = new Map<string, number>();
   for (const it of installments ?? []) {

@@ -4,7 +4,7 @@ import { ChevronLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { todayISO } from "@/lib/date";
 import { ExpenseForm, type ExpenseDefaults } from "@/components/expense-form";
-import { deleteExpense, updateExpense } from "../actions";
+import { updateExpense } from "../actions";
 
 export default async function EditarGastoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -39,7 +39,6 @@ export default async function EditarGastoPage({ params }: { params: Promise<{ id
   };
 
   const updateWithId = updateExpense.bind(null, id);
-  const deleteWithId = deleteExpense.bind(null, id);
 
   return (
     <div className="flex flex-col gap-4">
@@ -59,14 +58,9 @@ export default async function EditarGastoPage({ params }: { params: Promise<{ id
         expense={expense}
       />
 
-      <form action={deleteWithId}>
-        <button
-          type="submit"
-          className="w-full rounded-xl border border-red-300 py-3 text-sm font-medium text-red-600 dark:border-red-900"
-        >
-          Excluir gasto
-        </button>
-      </form>
+      <p className="px-1 text-center text-xs text-neutral-500">
+        Para excluir, use o botão de lixeira no gasto, na tela do cartão.
+      </p>
     </div>
   );
 }

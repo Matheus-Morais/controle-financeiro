@@ -134,19 +134,21 @@ describe("buildImportRows", () => {
     expect(installments[1].transaction_id).toBe("t2");
   });
 
-  it("monta a capa da fatura com fechamento/vencimento da competência", () => {
-    const { invoice } = buildImportRows(items, ctx);
-    expect(invoice).toEqual({
-      user_id: "u1",
-      card_id: "card1",
-      reference_month: "2026-07-01",
-      closing_date: "2026-07-25",
-      due_date: "2026-08-05", // dueDay(5) <= closingDay(25) → vence no mês seguinte
-      status: "open",
-    });
+  it("monta a capa da fatura (única competência) com fechamento/vencimento", () => {
+    const { invoices } = buildImportRows(items, ctx);
+    expect(invoices).toEqual([
+      {
+        user_id: "u1",
+        card_id: "card1",
+        reference_month: "2026-07-01",
+        closing_date: "2026-07-25",
+        due_date: "2026-08-05", // dueDay(5) <= closingDay(25) → vence no mês seguinte
+        status: "open",
+      },
+    ]);
   });
 
-  it("quando há parcela, grava como 'installment' com nº atual/total (sem gerar as futuras)", () => {
+  it("propaga as parcelas futuras (atual+1..total) para as competências seguintes", () => {
     const parc: ValidatedImportItem[] = [
       {
         id: "p1",
@@ -159,14 +161,50 @@ describe("buildImportRows", () => {
         recurringId: null,
       },
     ];
-    const { transactions, installments } = buildImportRows(parc, ctx);
+    const { transactions, installments, invoices } = buildImportRows(parc, ctx);
     expect(transactions[0]).toMatchObject({
       kind: "installment",
       installments_count: 4,
       description: "Amazon Marketplace",
     });
-    expect(installments).toHaveLength(1); // não espalha as parcelas futuras
-    expect(installments[0]).toMatchObject({ number: 1, amount_cents: 5000, reference_month: "2026-07-01" });
+    expect(installments).toHaveLength(4);
+    expect(installments.map((i) => [i.number, i.reference_month])).toEqual([
+      [1, "2026-07-01"],
+      [2, "2026-08-01"],
+      [3, "2026-09-01"],
+      [4, "2026-10-01"],
+    ]);
+    expect(installments.every((i) => i.amount_cents === 5000)).toBe(true);
+    // Uma capa de fatura por competência tocada.
+    expect(invoices.map((i) => i.reference_month)).toEqual([
+      "2026-07-01",
+      "2026-08-01",
+      "2026-09-01",
+      "2026-10-01",
+    ]);
+  });
+
+  it("propaga só as parcelas restantes quando a fatura já está no meio (3/10)", () => {
+    const parc: ValidatedImportItem[] = [
+      {
+        id: "p2",
+        description: "Notebook",
+        statementDescription: "LOJA X 03/10",
+        amountCents: 20000,
+        purchaseDate: "2026-05-10",
+        categoryId: null,
+        installment: { number: 3, count: 10 },
+        recurringId: null,
+      },
+    ];
+    const { installments } = buildImportRows(parc, ctx);
+    // Não cria as anteriores (1 e 2); começa na 3, na competência forçada.
+    expect(installments).toHaveLength(8);
+    expect(installments[0]).toMatchObject({ number: 3, reference_month: "2026-07-01" });
+    expect(installments[installments.length - 1]).toMatchObject({
+      number: 10,
+      reference_month: "2027-02-01",
+    });
   });
 
   it("item marcado como recorrente nasce 'recurring' com recurring_id na competência forçada", () => {
