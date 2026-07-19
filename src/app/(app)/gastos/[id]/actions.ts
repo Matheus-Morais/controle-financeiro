@@ -135,11 +135,3 @@ export async function updateExpense(
   revalidatePath("/", "layout");
   redirect(source.kind === "card" ? `/cartoes/${source.id}` : "/");
 }
-
-export async function deleteExpense(id: string): Promise<void> {
-  const supabase = await createClient();
-  // As parcelas são removidas em cascata (FK ON DELETE CASCADE).
-  await supabase.from("transactions").delete().eq("id", id);
-  revalidatePath("/", "layout");
-  redirect("/");
-}

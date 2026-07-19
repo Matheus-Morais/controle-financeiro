@@ -9,7 +9,8 @@ export async function spendingByCategory(db: DB, refMonth: string): Promise<Map<
   const { data: inst } = await db
     .from("installments")
     .select("amount_cents, transaction_id")
-    .eq("reference_month", refMonth);
+    .eq("reference_month", refMonth)
+    .is("deleted_at", null);
 
   const map = new Map<string, number>();
   if (!inst?.length) return map;
@@ -41,7 +42,8 @@ export async function monthlyTotals(
     .from("installments")
     .select("amount_cents, reference_month")
     .gte("reference_month", months[0])
-    .lte("reference_month", months[months.length - 1]);
+    .lte("reference_month", months[months.length - 1])
+    .is("deleted_at", null);
 
   const byMonth = new Map<string, number>(months.map((m) => [m, 0]));
   for (const it of inst ?? []) {

@@ -12,7 +12,7 @@
  */
 
 import { z } from "zod";
-import { invoiceRefForMonth, ymd, type CardCycle } from "./invoice";
+import { addMonths, invoiceRefForMonth, toISO, ymd, type CardCycle } from "./invoice";
 
 // ── Schema da saída da IA (structured outputs) ──────────────────────────────
 
@@ -244,7 +244,8 @@ export interface ValidatedImportItem {
   categoryId: string | null;
   /**
    * Parcela do lançamento (nº atual / total), quando a fatura indica parcelamento.
-   * `null` = à vista. Não gera as parcelas futuras — cada fatura traz a sua.
+   * `null` = à vista. As parcelas futuras (número atual+1..total) são propagadas
+   * para as competências seguintes por `buildImportRows`.
    */
   installment: { number: number; count: number } | null;
   /**
@@ -304,18 +305,23 @@ export interface InvoiceRow {
 export interface ImportRows {
   transactions: TransactionRow[];
   installments: InstallmentRow[];
-  invoice: InvoiceRow;
+  /** Capa de cada competência tocada (a da fatura + as das parcelas futuras). */
+  invoices: InvoiceRow[];
 }
 
 /**
- * Monta as linhas a gravar. Cada item vira UMA transação + UMA parcela na
- * competência FORÇADA (não recalcula por data — é uma fatura, tudo cai no mês
- * escolhido). Quando o item tem parcela (`installment`), a transação fica como
- * `installment` com `installments_count = total` e a parcela guarda `number =
- * atual`; as parcelas futuras NÃO são geradas (cada fatura traz a sua). Sem
- * parcela, é um gasto `single` (número 1 de 1). Também monta a capa da fatura.
+ * Monta as linhas a gravar. Cada item vira UMA transação. Para as parcelas:
+ * - Item com parcela (`installment`): a transação fica `installment` com
+ *   `installments_count = total`; cria-se a parcela ATUAL na competência forçada
+ *   e PROPAGAM-SE as seguintes (atual+1..total) para as competências
+ *   subsequentes. As anteriores (1..atual-1) não são criadas — pertencem a
+ *   faturas passadas (histórico).
+ * - Sem parcela (ou recorrente): uma parcela única na competência forçada.
+ * Também monta a capa de cada fatura tocada.
  */
 export function buildImportRows(items: ValidatedImportItem[], ctx: ImportContext): ImportRows {
+  const [ry, rm0] = ymd(ctx.referenceMonth);
+
   const transactions: TransactionRow[] = items.map((it) => ({
     id: it.id,
     user_id: ctx.userId,
@@ -333,27 +339,53 @@ export function buildImportRows(items: ValidatedImportItem[], ctx: ImportContext
     statement_description: it.statementDescription,
   }));
 
-  const installments: InstallmentRow[] = items.map((it) => ({
-    user_id: ctx.userId,
-    transaction_id: it.id,
-    card_id: ctx.cardId,
-    account_id: null,
-    number: !it.recurringId && it.installment ? it.installment.number : 1,
-    amount_cents: it.amountCents,
-    reference_month: ctx.referenceMonth,
-    status: "open",
-  }));
+  const installments: InstallmentRow[] = [];
+  for (const it of items) {
+    // Recorrente ignora parcela; só a ocorrência do mês (o cron materializa o resto).
+    const parcel = !it.recurringId ? it.installment : null;
+    if (!parcel) {
+      installments.push({
+        user_id: ctx.userId,
+        transaction_id: it.id,
+        card_id: ctx.cardId,
+        account_id: null,
+        number: 1,
+        amount_cents: it.amountCents,
+        reference_month: ctx.referenceMonth,
+        status: "open",
+      });
+      continue;
+    }
+    // Parcela atual (competência forçada) + as futuras nas competências seguintes.
+    for (let n = parcel.number; n <= parcel.count; n++) {
+      const [y, m0] = addMonths(ry, rm0, n - parcel.number);
+      installments.push({
+        user_id: ctx.userId,
+        transaction_id: it.id,
+        card_id: ctx.cardId,
+        account_id: null,
+        number: n,
+        amount_cents: it.amountCents,
+        reference_month: toISO(y, m0, 1),
+        status: "open",
+      });
+    }
+  }
 
-  const [ry, rm0] = ymd(ctx.referenceMonth);
-  const ref = invoiceRefForMonth(ry, rm0, ctx.cycle);
-  const invoice: InvoiceRow = {
-    user_id: ctx.userId,
-    card_id: ctx.cardId,
-    reference_month: ref.referenceMonth,
-    closing_date: ref.closingDate,
-    due_date: ref.dueDate,
-    status: "open",
-  };
+  // Uma capa por competência distinta tocada pelas parcelas.
+  const months = [...new Set(installments.map((i) => i.reference_month))].sort();
+  const invoices: InvoiceRow[] = months.map((m) => {
+    const [y, m0] = ymd(m);
+    const ref = invoiceRefForMonth(y, m0, ctx.cycle);
+    return {
+      user_id: ctx.userId,
+      card_id: ctx.cardId,
+      reference_month: ref.referenceMonth,
+      closing_date: ref.closingDate,
+      due_date: ref.dueDate,
+      status: "open",
+    };
+  });
 
-  return { transactions, installments, invoice };
+  return { transactions, installments, invoices };
 }

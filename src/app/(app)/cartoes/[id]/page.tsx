@@ -26,10 +26,11 @@ export default async function CartaoDetailPage({
 
   const refMonth = mes ?? currentReferenceMonth();
 
-  // Parcelas do mês + transações associadas (kind/descrição/data).
+  // Parcelas do mês + transações associadas (kind/descrição/data). Inclui as
+  // excluídas (soft-delete): elas continuam visíveis, esmaecidas e no fim da lista.
   const { data: installments } = await supabase
     .from("installments")
-    .select("id, number, amount_cents, transaction_id")
+    .select("id, number, amount_cents, transaction_id, deleted_at")
     .eq("card_id", id)
     .eq("reference_month", refMonth);
 
@@ -47,7 +48,9 @@ export default async function CartaoDetailPage({
   for (const it of installments ?? []) {
     const tx = txById.get(it.transaction_id);
     if (!tx) continue;
-    total += it.amount_cents;
+    const deleted = it.deleted_at != null;
+    // Excluídos não entram no total da fatura.
+    if (!deleted) total += it.amount_cents;
     groups[tx.kind as Kind].push({
       id: it.id,
       transactionId: it.transaction_id,
@@ -56,6 +59,7 @@ export default async function CartaoDetailPage({
       number: it.number,
       installmentsCount: tx.installments_count,
       purchaseDate: tx.purchase_date,
+      deleted,
     });
   }
 
@@ -118,7 +122,7 @@ export default async function CartaoDetailPage({
         </div>
       </div>
 
-      <InvoiceTabs groups={groups} currentMonth={refMonth} />
+      <InvoiceTabs groups={groups} currentMonth={refMonth} cardId={id} />
     </div>
   );
 }
