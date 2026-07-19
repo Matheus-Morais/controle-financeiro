@@ -182,7 +182,12 @@ export type Database = {
       notification_log: Table<NotificationLog>;
     };
     Views: { [_ in never]: never };
-    Functions: { [_ in never]: never };
+    Functions: {
+      reset_account_data: {
+        Args: Record<PropertyKey, never>;
+        Returns: void;
+      };
+    };
     Enums: {
       account_type: AccountType;
       expense_kind: ExpenseKind;

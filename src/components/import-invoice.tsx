@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AlertTriangle, Pencil } from "lucide-react";
 import { Spinner, WaveformLoader } from "@/components/loader";
 import { formatCents, parseBRLToCents } from "@/lib/money";
 import {
@@ -15,6 +16,7 @@ import {
 } from "@/lib/invoice-import";
 import { getExistingInvoiceKeys, importarGastosDaFatura } from "@/app/(app)/gastos/importar/actions";
 import { ConfirmCardModal } from "@/components/confirm-card-modal";
+import { CardSelect } from "@/components/card-select";
 
 const MAX_BYTES = 4 * 1024 * 1024;
 
@@ -22,6 +24,7 @@ interface Card {
   id: string;
   name: string;
   last_four: string | null;
+  color: string | null;
 }
 interface Category {
   id: string;
@@ -70,9 +73,6 @@ function toEditableItems(inv: ExtractedInvoice, categories: Category[]): Editabl
   }));
 }
 
-const inputClass =
-  "rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900";
-
 export function ImportInvoice({
   cards,
   categories,
@@ -101,6 +101,16 @@ export function ImportInvoice({
   const [cardConfident, setCardConfident] = useState(false);
   const [detectedDigits, setDetectedDigits] = useState<string | null>(null);
   const [showCardConfirm, setShowCardConfirm] = useState(false);
+
+  // Itens abertos em modo de edição (por padrão a lista é modo leitura, mais limpa).
+  const [editingIds, setEditingIds] = useState<Set<string>>(new Set());
+  const toggleEditing = (id: string) =>
+    setEditingIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const [saveState, saveAction, saving] = useActionState(importarGastosDaFatura, undefined);
   const [navigating, setNavigating] = useState(false);
@@ -148,6 +158,10 @@ export function ImportInvoice({
 
   const updateItem = (id: string, patch: Partial<EditableItem>) =>
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+
+  const categoryName = (id: string) => categories.find((c) => c.id === id)?.name;
+  const shortDate = (iso: string) =>
+    iso && iso.length >= 10 ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : iso;
 
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault();
@@ -210,7 +224,11 @@ export function ImportInvoice({
   const included = items.filter((it) => it.importable && it.include);
   const includedSum = included.reduce((s, it) => s + (parseBRLToCents(it.valorBrl) ?? 0), 0);
   const hasInvalid = included.some((it) => (parseBRLToCents(it.valorBrl) ?? 0) <= 0);
-  const skipped = items.filter((it) => !it.importable || it.duplicate).length;
+
+  // Lista principal = itens importáveis (duplicados entram aqui, marcados e esmaecidos).
+  // Pulados = itens não importáveis (pagamento, encargo, etc.) — vão para uma seção compacta.
+  const mainItems = items.filter((it) => it.importable);
+  const skippedItems = items.filter((it) => !it.importable);
 
   function handleSave() {
     if (!cardId || included.length === 0 || hasInvalid) return;
@@ -243,7 +261,7 @@ export function ImportInvoice({
       <form onSubmit={handleUpload} className="relative flex flex-col gap-4">
         {/* overlay de análise da IA */}
         {uploading && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 rounded-2xl bg-white/90 backdrop-blur-sm dark:bg-neutral-950/90">
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 rounded-2xl bg-neutral-50 dark:bg-neutral-950">
             <WaveformLoader size={48} color="var(--color-brand, #6366f1)" speed={0.9} />
             <p className="text-sm font-medium text-neutral-600 dark:text-neutral-300">
               Analisando sua fatura…
@@ -282,25 +300,19 @@ export function ImportInvoice({
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-3">
-        <label className="flex flex-col gap-1 text-sm">
+        <label className="flex flex-col gap-1 text-sm text-neutral-500">
           Cartão
-          <select
+          <CardSelect
+            cards={cardsList}
             value={cardId}
-            onChange={(e) => {
-              setCardId(e.target.value);
+            onChange={(id) => {
+              setCardId(id);
               setCardConfident(true);
             }}
-            className="rounded-xl border border-neutral-300 bg-white px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-900"
-          >
-            {cardsList.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-                {c.last_four ? ` ••${c.last_four}` : ""}
-              </option>
-            ))}
-          </select>
+            className="rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+          />
         </label>
-        <label className="flex flex-col gap-1 text-sm">
+        <label className="flex flex-col gap-1 text-sm text-neutral-500">
           Competência
           <input
             type="month"
@@ -309,119 +321,207 @@ export function ImportInvoice({
               const v = e.target.value;
               if (/^\d{4}-\d{2}$/.test(v)) setReferenceMonth(`${v}-01`);
             }}
-            className="rounded-xl border border-neutral-300 bg-white px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-900"
+            className="rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
           />
         </label>
       </div>
 
       {rec.hasTotal && !rec.ok && (
-        <p className="rounded-xl bg-amber-100 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-          A soma dos lançamentos ({formatCents(signedSum)}) não bate com o total da fatura (
-          {formatCents(totalCents ?? 0)}). Diferença de {formatCents(Math.abs(rec.deltaCents))} —
-          confira se algum item ficou faltando ou com valor errado.
-        </p>
+        <div className="flex gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-800 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-900/50">
+          <AlertTriangle size={15} className="mt-px shrink-0" />
+          <p>
+            A soma dos lançamentos (<b>{formatCents(signedSum)}</b>) não bate com o total da fatura (
+            <b>{formatCents(totalCents ?? 0)}</b>). Diferença de {formatCents(Math.abs(rec.deltaCents))}{" "}
+            — confira se algum item ficou faltando ou com valor errado.
+          </p>
+        </div>
       )}
 
-      <div className="flex items-center justify-between text-sm">
-        <span className="text-neutral-500">
-          {included.length} incluído(s)
-          {skipped > 0 && ` · ${skipped} pulado(s)`}
-        </span>
-        <span className="font-semibold">{formatCents(includedSum)}</span>
-      </div>
-
-      <ul className="flex flex-col gap-2">
-        {items.map((it) => {
+      <ul className="flex flex-col gap-2.5">
+        {mainItems.map((it) => {
           const cents = parseBRLToCents(it.valorBrl);
-          const invalid = it.importable && it.include && (cents == null || cents <= 0);
+          const invalid = it.include && (cents == null || cents <= 0);
+          const isEditing = editingIds.has(it.id);
+          const catName = categoryName(it.categoryId);
           return (
             <li
               key={it.id}
-              className={`rounded-xl border p-3 ${
-                it.importable && it.include
-                  ? "border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
-                  : "border-neutral-200 bg-neutral-100 opacity-70 dark:border-neutral-800 dark:bg-neutral-900/40"
-              }`}
+              className={`rounded-2xl bg-white p-3.5 shadow-sm transition dark:bg-neutral-900 ${
+                isEditing
+                  ? "ring-2 ring-brand/40"
+                  : invalid
+                    ? "ring-1 ring-red-300 dark:ring-red-500/40"
+                    : "ring-1 ring-neutral-200/70 dark:ring-white/5"
+              } ${it.include ? "" : "opacity-60"}`}
             >
-              <div className="flex items-start gap-2">
-                {it.importable ? (
-                  <input
-                    type="checkbox"
-                    checked={it.include}
-                    onChange={(e) => updateItem(it.id, { include: e.target.checked })}
-                    className="mt-1 h-4 w-4 shrink-0 accent-brand"
-                  />
-                ) : (
-                  <span className="mt-0.5 shrink-0 rounded bg-neutral-300 px-1.5 py-0.5 text-[10px] text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
-                    {TIPO_LABEL[it.tipo]}
-                  </span>
-                )}
-                <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={it.include}
+                  onChange={(e) => updateItem(it.id, { include: e.target.checked })}
+                  className="h-5 w-5 shrink-0 rounded accent-brand"
+                  aria-label={`Incluir ${it.description}`}
+                />
+                {isEditing ? (
                   <input
                     value={it.description}
                     onChange={(e) => updateItem(it.id, { description: e.target.value })}
-                    disabled={!it.importable}
-                    className={`w-full ${inputClass}`}
+                    className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-2.5 py-2 text-sm font-medium dark:border-neutral-700 dark:bg-neutral-800"
                     placeholder="Nome do gasto"
                   />
-                  {it.parcela && (
-                    <span className="mt-1 inline-block rounded bg-brand/10 px-1.5 py-0.5 text-[11px] font-medium text-brand">
-                      Parcela {it.parcela.atual}/{it.parcela.total}
-                    </span>
-                  )}
-                  <p className="mt-0.5 truncate text-[11px] text-neutral-400">
-                    {it.statementDescription}
-                    {it.duplicate && " · já importado"}
-                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => toggleEditing(it.id)}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="truncate font-medium">{it.description || "Sem nome"}</span>
+                        <span
+                          className={`shrink-0 font-semibold tabular-nums ${invalid ? "text-red-600 dark:text-red-400" : ""}`}
+                        >
+                          {formatCents(cents ?? 0)}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-neutral-500">
+                        <span
+                          className={
+                            catName
+                              ? "rounded-md bg-neutral-100 px-1.5 py-0.5 dark:bg-neutral-800"
+                              : "italic text-neutral-400"
+                          }
+                        >
+                          {catName ?? "Sem categoria"}
+                        </span>
+                        {it.parcela && (
+                          <span className="rounded-md bg-brand/10 px-1.5 py-0.5 font-medium text-brand">
+                            Parcela {it.parcela.atual}/{it.parcela.total}
+                          </span>
+                        )}
+                        {it.markAsRecurring && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
+                            ✓ Recorrente
+                          </span>
+                        )}
+                        {it.suggestedRecurring && !it.markAsRecurring && (
+                          <span className="rounded-full border border-dashed border-emerald-400/70 px-1.5 py-0.5 text-emerald-600 dark:text-emerald-400">
+                            ↻ recorrente?
+                          </span>
+                        )}
+                        {it.duplicate && (
+                          <span className="rounded-md bg-neutral-100 px-1.5 py-0.5 text-neutral-400 dark:bg-neutral-800">
+                            já importado
+                          </span>
+                        )}
+                        <span>{shortDate(it.purchaseDate)}</span>
+                      </div>
+                    </div>
+                    <Pencil size={15} className="shrink-0 text-neutral-300 dark:text-neutral-600" />
+                  </button>
+                )}
+              </div>
 
-                  {it.suggestedRecurring && it.importable && (
-                    <button
-                      type="button"
-                      onClick={() => updateItem(it.id, { markAsRecurring: !it.markAsRecurring })}
-                      className={`mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium transition ${
-                        it.markAsRecurring
-                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
-                          : "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
-                      }`}
-                    >
-                      {it.markAsRecurring ? "✓ Recorrente" : "↻ Recorrente?"}
-                    </button>
-                  )}
-                  {it.importable && (
-                    <div className="mt-2 grid grid-cols-2 gap-2">
+              {isEditing && (
+                <div className="mt-2.5 flex flex-col gap-2 pl-8">
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="flex flex-col gap-1 text-[11px] text-neutral-400">
+                      Valor
                       <input
                         inputMode="decimal"
                         value={it.valorBrl}
                         onChange={(e) => updateItem(it.id, { valorBrl: e.target.value })}
                         placeholder="0,00"
-                        className={`${inputClass} ${invalid ? "border-red-400" : ""}`}
+                        className={`rounded-lg border bg-neutral-50 px-2.5 py-2 text-sm dark:bg-neutral-800 ${
+                          invalid ? "border-red-400" : "border-neutral-200 dark:border-neutral-700"
+                        }`}
                       />
+                    </label>
+                    <label className="flex flex-col gap-1 text-[11px] text-neutral-400">
+                      Data
                       <input
                         type="date"
                         value={it.purchaseDate}
                         onChange={(e) => updateItem(it.id, { purchaseDate: e.target.value })}
-                        className={inputClass}
+                        className="rounded-lg border border-neutral-200 bg-neutral-50 px-2.5 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
                       />
-                      <select
-                        value={it.categoryId}
-                        onChange={(e) => updateItem(it.id, { categoryId: e.target.value })}
-                        className={`col-span-2 ${inputClass}`}
+                    </label>
+                  </div>
+                  <select
+                    value={it.categoryId}
+                    onChange={(e) => updateItem(it.id, { categoryId: e.target.value })}
+                    className="rounded-lg border border-neutral-200 bg-neutral-50 px-2.5 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
+                  >
+                    <option value="">Sem categoria</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex items-center justify-between gap-2">
+                    {it.suggestedRecurring ? (
+                      <button
+                        type="button"
+                        onClick={() => updateItem(it.id, { markAsRecurring: !it.markAsRecurring })}
+                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition ${
+                          it.markAsRecurring
+                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
+                            : "border border-dashed border-emerald-400 text-emerald-700 dark:text-emerald-400"
+                        }`}
                       >
-                        <option value="">Sem categoria</option>
-                        {categories.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                        {it.markAsRecurring ? "✓ Recorrente" : "↻ Marcar recorrente"}
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => toggleEditing(it.id)}
+                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-brand"
+                    >
+                      Concluir
+                    </button>
+                  </div>
+                  {it.statementDescription && it.statementDescription !== it.description && (
+                    <p className="truncate text-[11px] text-neutral-400">{it.statementDescription}</p>
                   )}
                 </div>
-              </div>
+              )}
             </li>
           );
         })}
+
+        {skippedItems.length > 0 && (
+          <>
+            <li className="px-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+              Pulados ({skippedItems.length})
+            </li>
+            {skippedItems.map((it) => (
+              <li key={it.id} className="flex items-center gap-3 rounded-xl px-3 py-2 opacity-70">
+                <span className="shrink-0 rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">
+                  {TIPO_LABEL[it.tipo]}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm text-neutral-500">
+                  {it.description || it.statementDescription}
+                </span>
+                <span className="shrink-0 text-sm tabular-nums text-neutral-400">
+                  {formatCents(parseBRLToCents(it.valorBrl) ?? 0)}
+                </span>
+              </li>
+            ))}
+          </>
+        )}
       </ul>
+
+      <div className="flex items-center justify-between rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-neutral-200/70 dark:bg-neutral-900 dark:ring-white/5">
+        <span className="text-sm text-neutral-500">
+          {included.length} incluído{included.length === 1 ? "" : "s"}
+          {skippedItems.length > 0 &&
+            ` · ${skippedItems.length} pulado${skippedItems.length === 1 ? "" : "s"}`}
+        </span>
+        <span className="text-base font-semibold tabular-nums">{formatCents(includedSum)}</span>
+      </div>
 
       {hasInvalid && (
         <p className="text-sm text-red-600">Há itens incluídos com valor inválido.</p>

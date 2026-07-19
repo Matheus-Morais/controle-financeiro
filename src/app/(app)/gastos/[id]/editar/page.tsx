@@ -6,8 +6,15 @@ import { todayISO } from "@/lib/date";
 import { ExpenseForm, type ExpenseDefaults } from "@/components/expense-form";
 import { updateExpense } from "../actions";
 
-export default async function EditarGastoPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EditarGastoPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ mes?: string }>;
+}) {
   const { id } = await params;
+  const { mes } = await searchParams;
   const supabase = await createClient();
 
   const [{ data: tx }, { data: cards }, { data: accounts }, { data: categories }] =
@@ -38,12 +45,15 @@ export default async function EditarGastoPage({ params }: { params: Promise<{ id
     purchaseDate: tx.purchase_date,
   };
 
-  const updateWithId = updateExpense.bind(null, id);
+  const updateWithId = updateExpense.bind(null, id, mes);
+
+  // Voltar para o cartão que o usuário analisa (com o mês), ou home se for carteira.
+  const backHref = tx.card_id ? `/cartoes/${tx.card_id}${mes ? `?mes=${mes}` : ""}` : "/";
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        <Link href="/" className="text-neutral-500">
+        <Link href={backHref} className="text-neutral-500">
           <ChevronLeft />
         </Link>
         <h1 className="text-2xl font-bold">Editar gasto</h1>

@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { categorySchema } from "@/lib/schemas";
 
-type ActionState = { error?: string } | undefined;
+type ActionState =
+  | { error?: string; ok?: boolean; category?: { id: string; name: string; color: string | null } }
+  | undefined;
 
 const PALETTE = ["#16a34a", "#0ea5e9", "#8b5cf6", "#ef4444", "#f97316", "#ec4899", "#14b8a6", "#6366f1"];
 
@@ -24,19 +26,39 @@ export async function createCategory(_prev: ActionState, formData: FormData): Pr
     .eq("user_id", user.id);
   const color = parsed.data.color || PALETTE[(count ?? 0) % PALETTE.length];
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("categories")
-    .insert({ user_id: user.id, name: parsed.data.name, color });
+    .insert({ user_id: user.id, name: parsed.data.name, color })
+    .select("id, name, color")
+    .single();
   if (error) return { error: error.message };
 
   revalidatePath("/orcamento");
-  return { ok: true } as ActionState;
+  revalidatePath("/config/categorias");
+  return { ok: true, category: data } as ActionState;
 }
 
 export async function deleteCategory(id: string): Promise<void> {
   const supabase = await createClient();
   await supabase.from("categories").delete().eq("id", id);
   revalidatePath("/orcamento");
+  revalidatePath("/config/categorias");
+}
+
+/** Renomeia e/ou recolore uma categoria existente. */
+export async function updateCategory(
+  id: string,
+  patch: { name?: string; color?: string },
+): Promise<void> {
+  const supabase = await createClient();
+  const update: { name?: string; color?: string } = {};
+  if (patch.name !== undefined && patch.name.trim().length > 0) update.name = patch.name.trim();
+  if (patch.color !== undefined) update.color = patch.color;
+  if (Object.keys(update).length === 0) return;
+
+  await supabase.from("categories").update(update).eq("id", id);
+  revalidatePath("/orcamento");
+  revalidatePath("/config/categorias");
 }
 
 /**

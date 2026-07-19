@@ -20,6 +20,7 @@ const ACCOUNT_CLOSING_DAY = 31;
  */
 export async function updateExpense(
   id: string,
+  month: string | undefined,
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
@@ -133,5 +134,9 @@ export async function updateExpense(
   }
 
   revalidatePath("/", "layout");
-  redirect(source.kind === "card" ? `/cartoes/${source.id}` : "/");
+  redirect(
+    source.kind === "card"
+      ? `/cartoes/${source.id}${month ? `?mes=${month}` : ""}`
+      : "/",
+  );
 }

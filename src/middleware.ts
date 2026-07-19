@@ -38,6 +38,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/auth") ||
     pathname.startsWith("/esqueci-senha") ||
     pathname.startsWith("/redefinir-senha");
+  const isOnboarding = pathname.startsWith("/onboarding");
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
@@ -48,6 +49,14 @@ export async function middleware(request: NextRequest) {
   if (user && (pathname === "/login" || pathname === "/signup")) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
+    return NextResponse.redirect(url);
+  }
+
+  // Só quem se cadastrou com o onboarding ativo (chave presente no metadata)
+  // é redirecionado — usuários antigos, sem a chave, seguem direto.
+  if (user && !isPublic && !isOnboarding && user.user_metadata?.onboarding_pending) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/onboarding";
     return NextResponse.redirect(url);
   }
 

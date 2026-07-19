@@ -3,11 +3,13 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Spinner } from "@/components/loader";
 import { createCardInline } from "@/app/(app)/cartoes/actions";
+import { CardSelect } from "@/components/card-select";
 
 interface Card {
   id: string;
   name: string;
   last_four: string | null;
+  color: string | null;
 }
 
 const inputClass =
@@ -75,18 +77,12 @@ export function ConfirmCardModal({
 
             <label className="flex flex-col gap-1 text-sm">
               Cartão
-              <select
+              <CardSelect
+                cards={cards}
                 value={cardId}
-                onChange={(e) => onChangeCardId(e.target.value)}
+                onChange={onChangeCardId}
                 className={inputClass}
-              >
-                {cards.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                    {c.last_four ? ` ••${c.last_four}` : ""}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
 
             <button

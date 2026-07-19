@@ -22,14 +22,16 @@ export function DeleteInstallmentButton({
   deleted,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
   function run(fn: () => Promise<{ error?: string } | void>) {
+    setError(null);
     startTransition(async () => {
       const res = await fn();
       if (res?.error) {
-        alert(res.error);
+        setError(res.error);
         return;
       }
       setOpen(false);
@@ -39,15 +41,18 @@ export function DeleteInstallmentButton({
 
   if (deleted) {
     return (
-      <button
-        type="button"
-        aria-label="Restaurar gasto"
-        disabled={pending}
-        onClick={() => run(() => restoreInstallment({ transactionId, month: currentMonth }))}
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-neutral-400 active:scale-95 disabled:opacity-50 dark:text-neutral-500"
-      >
-        <RotateCcw size={18} />
-      </button>
+      <div className="flex flex-col items-end gap-1">
+        <button
+          type="button"
+          aria-label="Restaurar gasto"
+          disabled={pending}
+          onClick={() => run(() => restoreInstallment({ transactionId, month: currentMonth }))}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-neutral-400 active:scale-95 disabled:opacity-50 dark:text-neutral-500"
+        >
+          <RotateCcw size={18} />
+        </button>
+        {error && <p className="text-[11px] text-red-600">{error}</p>}
+      </div>
     );
   }
 
@@ -80,6 +85,7 @@ export function DeleteInstallmentButton({
             <p className="mt-1 text-sm text-neutral-500">
               Os meses anteriores são mantidos no histórico.
             </p>
+            {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
             <div className="mt-4 flex flex-col gap-2">
               <button
                 type="button"

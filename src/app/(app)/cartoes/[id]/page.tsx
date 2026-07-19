@@ -84,7 +84,7 @@ export default async function CartaoDetailPage({
         <Link href="/cartoes" className="text-neutral-500">
           <ChevronLeft />
         </Link>
-        <h1 className="flex-1 truncate text-2xl font-bold">{card.name}</h1>
+        <h1 className="min-w-0 flex-1 truncate text-2xl font-bold">{card.name}</h1>
         <Link href={`/cartoes/${id}/editar`} className="text-neutral-500">
           <Pencil size={20} />
         </Link>
@@ -109,7 +109,8 @@ export default async function CartaoDetailPage({
 
       {/* Resumo da fatura */}
       <div
-        className="rounded-2xl p-4 text-white shadow-sm"
+        key={refMonth}
+        className="animate-month-in rounded-2xl p-4 text-white shadow-sm motion-reduce:animate-none"
         style={{ backgroundColor: card.color ?? "#16a34a" }}
       >
         <p className="text-xs opacity-90">Total da fatura</p>
@@ -118,7 +119,14 @@ export default async function CartaoDetailPage({
           <span className="text-xs opacity-90">
             Vence em {dueDate.split("-").reverse().join("/")}
           </span>
-          {invoice && <InvoicePaidToggle invoiceId={invoice.id} paid={invoice.status === "paid"} />}
+          {invoice && (
+            <InvoicePaidToggle
+              invoiceId={invoice.id}
+              paid={invoice.status === "paid"}
+              cardId={id}
+              currentMonth={refMonth}
+            />
+          )}
         </div>
       </div>
 
