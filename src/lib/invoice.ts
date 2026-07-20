@@ -113,3 +113,29 @@ export function referenceMonthFromDueDate(dueDate: string, cycle: CardCycle): st
     cycle.dueDay > cycle.closingDay ? [dy, dm0] : addMonths(dy, dm0, -1);
   return toISO(ry, rm0, 1);
 }
+
+// ── Estado de exibição da fatura (regime de caixa) ──────────────────────────
+
+/**
+ * Estado de exibição de uma fatura no regime de caixa (o que o usuário paga no
+ * mês do vencimento):
+ * - `paid`: já quitada.
+ * - `to_pay`: em aberto e já fechou (`closingDate <= today`) — está no período
+ *   de pagamento.
+ * - `forecast`: em aberto e ainda não fechou (`closingDate > today`) — prevista.
+ */
+export type InvoiceState = "paid" | "to_pay" | "forecast";
+
+/**
+ * Deriva o {@link InvoiceState} a partir do status persistido, da data de
+ * fechamento e de "hoje". A comparação é lexicográfica sobre ISO `YYYY-MM-DD`,
+ * que equivale à comparação cronológica — puro, sem `Date`.
+ */
+export function deriveInvoiceState(
+  status: "open" | "paid",
+  closingDate: string,
+  today: string,
+): InvoiceState {
+  if (status === "paid") return "paid";
+  return closingDate <= today ? "to_pay" : "forecast";
+}

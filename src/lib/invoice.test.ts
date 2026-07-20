@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   clampDay,
   daysInMonth,
+  deriveInvoiceState,
   invoiceRefForMonth,
   invoiceRefForPurchase,
   referenceMonthFor,
@@ -114,5 +115,23 @@ describe("referenceMonthFromDueDate", () => {
     const cycle = { closingDay: 28, dueDay: 7 };
     const ref = invoiceRefForMonth(2025, 6, cycle); // competência julho
     expect(referenceMonthFromDueDate(ref.dueDate, cycle)).toBe(ref.referenceMonth);
+  });
+});
+
+describe("deriveInvoiceState", () => {
+  it("fatura paga sempre é 'paid', mesmo com fechamento futuro", () => {
+    expect(deriveInvoiceState("paid", "2026-08-25", "2026-07-20")).toBe("paid");
+  });
+
+  it("aberta e já fechada (closing < hoje) é 'to_pay'", () => {
+    expect(deriveInvoiceState("open", "2026-06-25", "2026-07-20")).toBe("to_pay");
+  });
+
+  it("aberta e fechando exatamente hoje é 'to_pay' (comparação inclusiva)", () => {
+    expect(deriveInvoiceState("open", "2026-07-20", "2026-07-20")).toBe("to_pay");
+  });
+
+  it("aberta e ainda não fechada (closing > hoje) é 'forecast'", () => {
+    expect(deriveInvoiceState("open", "2026-07-25", "2026-07-20")).toBe("forecast");
   });
 });

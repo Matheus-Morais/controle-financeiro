@@ -26,6 +26,18 @@ export function shiftReferenceMonth(referenceMonth: string, delta: number): stri
   return toISO(ny, nm0, 1);
 }
 
+/**
+ * Intervalo semiaberto `[start, endExclusive)` de um mês `YYYY-MM-01`.
+ * Ex.: "2026-07-01" → { start: "2026-07-01", endExclusive: "2026-08-01" }.
+ * Usado para filtrar datas por mês (ex.: `due_date`) sem precisar calcular o
+ * último dia do mês (bissexto/30/31): basta `gte(start)` + `lt(endExclusive)`.
+ */
+export function monthRange(month: string): { start: string; endExclusive: string } {
+  const [y, m0] = ymd(month);
+  const [ny, nm0] = addMonths(y, m0, 1);
+  return { start: toISO(y, m0, 1), endExclusive: toISO(ny, nm0, 1) };
+}
+
 const MONTHS = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
