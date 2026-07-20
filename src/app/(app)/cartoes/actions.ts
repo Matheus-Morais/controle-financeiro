@@ -45,7 +45,14 @@ type InlineCardState =
   | {
       error?: string;
       ok?: boolean;
-      card?: { id: string; name: string; last_four: string | null; color: string | null };
+      card?: {
+        id: string;
+        name: string;
+        last_four: string | null;
+        color: string | null;
+        closing_day: number;
+        due_day: number;
+      };
     }
   | undefined;
 
@@ -72,7 +79,7 @@ export async function createCardInline(
   const { data, error } = await supabase
     .from("cards")
     .insert(cardInsertPayload(user.id, parsed.data))
-    .select("id, name, last_four, color")
+    .select("id, name, last_four, color, closing_day, due_day")
     .single();
   if (error) return { error: error.message };
 

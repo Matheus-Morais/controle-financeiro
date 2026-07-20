@@ -2,13 +2,15 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Pencil } from "lucide-react";
+import { AlertTriangle, Lock, Pencil, Unlock } from "lucide-react";
 import { Spinner, WaveformLoader } from "@/components/loader";
 import { formatCents, parseBRLToCents } from "@/lib/money";
+import { referenceMonthFromDueDate } from "@/lib/invoice";
 import {
   dedupeKey,
   isImportable,
   matchCategoryByName,
+  normalizeText,
   reconcile,
   stripInstallmentSuffix,
   type ExtractedInvoice,
@@ -25,6 +27,8 @@ interface Card {
   name: string;
   last_four: string | null;
   color: string | null;
+  closing_day: number;
+  due_day: number;
 }
 interface Category {
   id: string;
@@ -59,7 +63,9 @@ function toEditableItems(inv: ExtractedInvoice, categories: Category[]): Editabl
   return inv.itens.map((it, i) => ({
     id: `it-${i}`,
     statementDescription: it.descricao,
-    description: stripInstallmentSuffix(it.descricao, it.parcela),
+    // Nome amigável criado pela IA vira o título editável; cai no bruto se a IA
+    // não conseguiu limpar. O token de parcela é removido de qualquer forma.
+    description: stripInstallmentSuffix(it.nome_amigavel?.trim() || it.descricao, it.parcela),
     valorBrl: it.valor_brl,
     purchaseDate: it.data,
     categoryId: matchCategoryByName(it.categoria_sugerida, categories) ?? "",
@@ -71,6 +77,23 @@ function toEditableItems(inv: ExtractedInvoice, categories: Category[]): Editabl
     suggestedRecurring: it.sugerido_recorrente,
     markAsRecurring: false,
   }));
+}
+
+/**
+ * Palpite de cartão por emissor/bandeira, usado só quando o PDF não traz os 4
+ * dígitos. Casa quando o nome de um cartão cadastrado aparece no texto de
+ * emissor/bandeira da fatura (ou vice-versa) e é o ÚNICO candidato — ambíguo não
+ * conta. É apenas pré-seleção: nunca marca o cartão como confiável (isso é
+ * exclusivo do match por dígitos), então o usuário sempre confirma no modal.
+ */
+function matchCardByIssuer(inv: ExtractedInvoice, cards: Card[]): Card | undefined {
+  const hay = normalizeText(`${inv.emissor ?? ""} ${inv.bandeira ?? ""}`).trim();
+  if (hay.length < 3) return undefined;
+  const matches = cards.filter((c) => {
+    const name = normalizeText(c.name);
+    return name.length >= 3 && (hay.includes(name) || name.includes(hay));
+  });
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 export function ImportInvoice({
@@ -92,6 +115,9 @@ export function ImportInvoice({
   const [cardsList, setCardsList] = useState<Card[]>(cards);
   const [cardId, setCardId] = useState("");
   const [referenceMonth, setReferenceMonth] = useState(currentMonth);
+  // A competência é DERIVADA do vencimento + ciclo do cartão e fica travada por
+  // padrão; o usuário pode destravar ("Ajustar") para corrigir manualmente.
+  const [competenceLocked, setCompetenceLocked] = useState(true);
   const [existingKeys, setExistingKeys] = useState<Set<string>>(new Set());
 
   // Cartão veio de um match confiável (últimos 4 dígitos do PDF) ou de um
@@ -163,6 +189,32 @@ export function ImportInvoice({
   const shortDate = (iso: string) =>
     iso && iso.length >= 10 ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : iso;
 
+  // Deriva a competência (`YYYY-MM-01`) do VENCIMENTO extraído + ciclo do cartão.
+  // É o cálculo determinístico pedido: a competência do app é o mês em que a
+  // fatura fecha, não o do vencimento. Sem vencimento/cartão, cai na sugestão da
+  // IA e, por fim, no mês corrente.
+  function deriveCompetence(card: Card | undefined, inv: ExtractedInvoice | null): string {
+    const venc = inv?.vencimento;
+    if (card && venc && /^\d{4}-\d{2}-\d{2}$/.test(venc)) {
+      return referenceMonthFromDueDate(venc, {
+        closingDay: card.closing_day,
+        dueDay: card.due_day,
+      });
+    }
+    const sug = inv?.competencia_sugerida;
+    return sug && /^\d{4}-\d{2}$/.test(sug) ? `${sug}-01` : currentMonth;
+  }
+
+  // Troca de cartão (manual). Recalcula a competência quando ela está travada —
+  // trocar o cartão muda o ciclo, logo muda a competência derivada do vencimento.
+  function selectCard(id: string) {
+    setCardId(id);
+    setCardConfident(true);
+    if (competenceLocked) {
+      setReferenceMonth(deriveCompetence(cardsList.find((c) => c.id === id), extracted));
+    }
+  }
+
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault();
     if (!file) return;
@@ -185,16 +237,21 @@ export function ImportInvoice({
       setExtracted(inv);
       setItems(toEditableItems(inv, categories));
 
-      // Cartão: casa pelos últimos 4 dígitos, senão o primeiro (fallback, exige confirmação).
+      // Cartão: os últimos 4 dígitos são o sinal 100% confiável — quando batem,
+      // pré-selecionamos e dispensamos a confirmação. Sem dígitos, tentamos um
+      // palpite por emissor/bandeira só para pré-selecionar, mas SEM marcar como
+      // confiável (o usuário ainda confirma no modal). Último caso: 1º da lista.
       const digits = inv.ult4_digitos?.replace(/\D/g, "").slice(-4) || null;
-      const matched = digits ? cardsList.find((c) => c.last_four === digits) : undefined;
-      setCardId(matched?.id ?? cardsList[0]?.id ?? "");
-      setCardConfident(!!matched);
+      const byDigits = digits ? cardsList.find((c) => c.last_four === digits) : undefined;
+      const byIssuer = !byDigits ? matchCardByIssuer(inv, cardsList) : undefined;
+      const chosen = byDigits ?? byIssuer ?? cardsList[0];
+      setCardId(chosen?.id ?? "");
+      setCardConfident(!!byDigits);
       setDetectedDigits(digits);
 
-      // Competência: da sugestão (YYYY-MM), senão o mês corrente.
-      const sug = inv.competencia_sugerida;
-      setReferenceMonth(sug && /^\d{4}-\d{2}$/.test(sug) ? `${sug}-01` : currentMonth);
+      // Competência: derivada do vencimento + ciclo do cartão escolhido; travada.
+      setReferenceMonth(deriveCompetence(chosen, inv));
+      setCompetenceLocked(true);
 
       setPhase("review");
     } catch {
@@ -305,25 +362,43 @@ export function ImportInvoice({
           <CardSelect
             cards={cardsList}
             value={cardId}
-            onChange={(id) => {
-              setCardId(id);
-              setCardConfident(true);
-            }}
+            onChange={selectCard}
             className="rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
           />
         </label>
-        <label className="flex flex-col gap-1 text-sm text-neutral-500">
-          Competência
+        <div className="flex flex-col gap-1 text-sm text-neutral-500">
+          <div className="flex items-center justify-between gap-1">
+            <span>Competência</span>
+            <button
+              type="button"
+              onClick={() => setCompetenceLocked((v) => !v)}
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-brand"
+              aria-pressed={competenceLocked}
+            >
+              {competenceLocked ? (
+                <>
+                  <Lock size={11} /> Ajustar
+                </>
+              ) : (
+                <>
+                  <Unlock size={11} /> Travar
+                </>
+              )}
+            </button>
+          </div>
           <input
             type="month"
             value={referenceMonth.slice(0, 7)}
+            disabled={competenceLocked}
             onChange={(e) => {
               const v = e.target.value;
               if (/^\d{4}-\d{2}$/.test(v)) setReferenceMonth(`${v}-01`);
             }}
-            className="rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+            className={`rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 ${
+              competenceLocked ? "cursor-not-allowed opacity-60" : ""
+            }`}
           />
-        </label>
+        </div>
       </div>
 
       {rec.hasTotal && !rec.ok && (
@@ -545,7 +620,12 @@ export function ImportInvoice({
         <ConfirmCardModal
           cards={cardsList}
           cardId={cardId}
-          onChangeCardId={setCardId}
+          onChangeCardId={(id) => {
+            setCardId(id);
+            if (competenceLocked) {
+              setReferenceMonth(deriveCompetence(cardsList.find((c) => c.id === id), extracted));
+            }
+          }}
           detectedDigits={detectedDigits}
           onCancel={() => setShowCardConfirm(false)}
           onConfirm={() => {
@@ -556,6 +636,7 @@ export function ImportInvoice({
           onCardCreated={(card) => {
             setCardsList((prev) => [...prev, card]);
             setCardId(card.id);
+            if (competenceLocked) setReferenceMonth(deriveCompetence(card, extracted));
           }}
         />
       )}

@@ -32,6 +32,12 @@ export type ExtractedTipo = z.infer<typeof extractedTipoSchema>;
 export const extractedItemSchema = z.object({
   /** Nome exatamente como impresso na fatura (vira `statement_description`). */
   descricao: z.string(),
+  /**
+   * Nome amigável/legível que a IA cria a partir da descrição bruta (ex.:
+   * "PAGSEGURO *IFD" → "iFood", "AMZN MKTP BR*A1B2" → "Amazon"). Vira o
+   * `description` exibido/editável na revisão; o `descricao` bruto vira legenda.
+   */
+  nome_amigavel: z.string(),
   /** Valor como impresso, em texto ("1.234,56"); convertido depois por money.ts. */
   valor_brl: z.string(),
   /** Data da compra `YYYY-MM-DD` (a IA infere o ano pela competência). */
@@ -56,7 +62,14 @@ export const extractedInvoiceSchema = z.object({
   /** Últimos 4 dígitos do cartão, se visíveis (para casar com o cartão). */
   ult4_digitos: z.string().nullable(),
   emissor: z.string().nullable(),
-  /** Competência sugerida `YYYY-MM`. */
+  /** Bandeira/produto do cartão, se visível (ex.: "Visa", "Mastercard Black"). */
+  bandeira: z.string().nullable(),
+  /**
+   * Data de vencimento impressa na fatura (`YYYY-MM-DD`). É o campo mais confiável
+   * para derivar a competência via ciclo do cartão (ver `referenceMonthFromDueDate`).
+   */
+  vencimento: z.string().nullable(),
+  /** Competência sugerida `YYYY-MM` (fallback quando não há vencimento/cartão). */
   competencia_sugerida: z.string().nullable(),
   /** Total da fatura como impresso (texto BRL), para a reconciliação. */
   total_fatura: z.string().nullable(),

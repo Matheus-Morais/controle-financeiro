@@ -10,6 +10,8 @@ interface Card {
   name: string;
   last_four: string | null;
   color: string | null;
+  closing_day: number;
+  due_day: number;
 }
 
 const inputClass =
