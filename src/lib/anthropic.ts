@@ -19,10 +19,12 @@ const MODEL = "claude-opus-4-8";
 const OUTPUT_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["ult4_digitos", "emissor", "competencia_sugerida", "total_fatura", "itens"],
+  required: ["ult4_digitos", "emissor", "bandeira", "vencimento", "competencia_sugerida", "total_fatura", "itens"],
   properties: {
     ult4_digitos: { type: ["string", "null"] },
     emissor: { type: ["string", "null"] },
+    bandeira: { type: ["string", "null"] },
+    vencimento: { type: ["string", "null"] },
     competencia_sugerida: { type: ["string", "null"] },
     total_fatura: { type: ["string", "null"] },
     itens: {
@@ -30,9 +32,10 @@ const OUTPUT_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["descricao", "valor_brl", "data", "tipo", "parcela", "categoria_sugerida", "sugerido_recorrente"],
+        required: ["descricao", "nome_amigavel", "valor_brl", "data", "tipo", "parcela", "categoria_sugerida", "sugerido_recorrente"],
         properties: {
           descricao: { type: "string" },
+          nome_amigavel: { type: "string" },
           valor_brl: { type: "string" },
           data: { type: "string" },
           tipo: { type: "string", enum: ["compra", "credito", "encargo", "pagamento", "outro"] },
@@ -74,6 +77,7 @@ function systemPrompt(categoryNames: string[]): string {
     "",
     "Regras por lançamento:",
     "- descricao: o texto do estabelecimento EXATAMENTE como impresso na fatura (não normalize).",
+    '- nome_amigavel: uma versão limpa e legível do estabelecimento, para o usuário reconhecer o gasto de relance. Remova prefixos de adquirente/gateway (PAGSEGURO, PAG*, MP*, MERCADOPAGO, PAYPAL *, EBANX *, STONE *, CIELO), códigos, asteriscos, sufixos de cidade/UF, números de pedido e ruído. Exemplos: "PAGSEGURO *IFD" → "iFood"; "AMZN MKTP BR*A1B2C3" → "Amazon"; "MP *UBER SP" → "Uber"; "APPLE.COM/BILL" → "Apple"; "PP*NETFLIX.COM" → "Netflix". Use a grafia consagrada da marca quando reconhecer. Se não der para reconhecer a marca, apenas limpe o ruído mantendo o nome do estabelecimento (Title Case). NUNCA invente um estabelecimento que não esteja na descrição. Mantenha o token de parcela FORA do nome_amigavel (a parcela vai no campo parcela).',
     '- valor_brl: o valor como impresso, em texto (ex.: "1.234,56"). Não faça conta.',
     "- data: a data da compra em YYYY-MM-DD. Infira o ano pelo período/competência da fatura; atenção à virada dezembro→janeiro.",
     "- tipo: 'compra' para gastos comuns; 'credito' para estornos/créditos; 'pagamento' EXCLUSIVAMENTE para lançamentos que representem pagamento da fatura anterior (ex.: 'PAG FATURA', 'PAGAMENTO RECEBIDO', 'Pagamento de Fatura', 'Crédito de Pagamento') — esses lançamentos têm sinal positivo na fatura mas NÃO são compras; 'encargo' para juros, multa, IOF, anuidade, seguro do cartão; 'outro' para o que não se encaixar.",
@@ -83,7 +87,16 @@ function systemPrompt(categoryNames: string[]): string {
     "- sugerido_recorrente: true quando o lançamento for provavelmente uma cobrança recorrente mensal — serviços de streaming (Netflix, Spotify, Disney+, HBO Max, Apple TV+, YouTube Premium, Deezer), academias, planos de saúde, seguros de vida/auto/residencial, assinaturas de software ou SaaS (GitHub, Adobe, Microsoft 365, iCloud, Google One, Dropbox, Canva), planos de telefonia/internet (exceto faturas avulsas). false para compras pontuais, parcelamentos e encargos.",
     "",
     "Compra internacional: use o valor em BRL efetivamente cobrado, não o valor em moeda estrangeira.",
-    "Metadados: total_fatura = total desta fatura como impresso (texto); competencia_sugerida = mês de referência em YYYY-MM; ult4_digitos e emissor se visíveis, senão null.",
+    "",
+    "Identificação do cartão (procure no cabeçalho/rodapé da fatura):",
+    "- ult4_digitos: os 4 últimos dígitos do número do cartão (ex.: 'final 1234', '**** 1234'), só os dígitos, senão null. É o sinal mais forte para casar o cartão.",
+    "- emissor: o banco/instituição emissora (ex.: 'Nubank', 'Itaú', 'Banco Inter', 'C6 Bank'), senão null.",
+    "- bandeira: a bandeira e, se houver, o produto do cartão (ex.: 'Visa', 'Mastercard', 'Mastercard Black', 'Elo Nanquim'), senão null.",
+    "",
+    "Datas da fatura (fundamentais para a competência):",
+    "- vencimento: a DATA DE VENCIMENTO da fatura em YYYY-MM-DD (rótulos 'Vencimento', 'Vence em', 'Pague até', 'Data de pagamento'). É o campo de data mais confiável — extraia com cuidado. null se não achar.",
+    "- competencia_sugerida: o mês de referência da fatura em YYYY-MM. Prefira derivar do fechamento; se só houver o vencimento, considere que a fatura geralmente fecha no mês anterior ao vencimento. Usaremos o vencimento + o ciclo do cartão para o cálculo final, então priorize acertar o vencimento.",
+    "Metadados: total_fatura = total desta fatura como impresso (texto).",
     "Não invente linhas nem valores. Se um valor estiver ilegível, transcreva o que conseguir ler.",
   ].join("\n");
 }

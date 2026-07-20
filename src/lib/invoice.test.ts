@@ -5,6 +5,7 @@ import {
   invoiceRefForMonth,
   invoiceRefForPurchase,
   referenceMonthFor,
+  referenceMonthFromDueDate,
 } from "./invoice";
 
 describe("daysInMonth", () => {
@@ -88,5 +89,30 @@ describe("invoiceRefForPurchase", () => {
       closingDate: "2025-08-25",
       dueDate: "2025-09-05",
     });
+  });
+});
+
+describe("referenceMonthFromDueDate", () => {
+  it("vencimento no mês seguinte ao fechamento (dueDay < closingDay) → recua um mês", () => {
+    // Fecha 25, vence 05. Vencimento 05/08 → competência julho.
+    expect(referenceMonthFromDueDate("2025-08-05", { closingDay: 25, dueDay: 5 })).toBe(
+      "2025-07-01",
+    );
+  });
+  it("vencimento no mesmo mês do fechamento (dueDay > closingDay) → mesmo mês", () => {
+    // Fecha 05, vence 15. Vencimento 15/07 → competência julho.
+    expect(referenceMonthFromDueDate("2025-07-15", { closingDay: 5, dueDay: 15 })).toBe(
+      "2025-07-01",
+    );
+  });
+  it("trata a virada de ano (vencimento em janeiro, competência dezembro)", () => {
+    expect(referenceMonthFromDueDate("2026-01-05", { closingDay: 25, dueDay: 5 })).toBe(
+      "2025-12-01",
+    );
+  });
+  it("é o inverso de invoiceRefForMonth para o vencimento gerado", () => {
+    const cycle = { closingDay: 28, dueDay: 7 };
+    const ref = invoiceRefForMonth(2025, 6, cycle); // competência julho
+    expect(referenceMonthFromDueDate(ref.dueDate, cycle)).toBe(ref.referenceMonth);
   });
 });
