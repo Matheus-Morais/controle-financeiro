@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, ChevronRight, Pencil } from "lucide-react";
+import { ChevronLeft, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { currentReferenceMonth, formatMonthLabel, shiftReferenceMonth } from "@/lib/date";
+import { currentReferenceMonth } from "@/lib/date";
 import { invoiceRefForMonth, ymd } from "@/lib/invoice";
 import { formatCents } from "@/lib/money";
 import { InvoiceTabs, type InvoiceItem } from "@/components/invoice-tabs";
 import { InvoicePaidToggle } from "@/components/invoice-paid-toggle";
+import { MonthNav } from "@/components/month-nav";
 
 type Kind = "installment" | "recurring" | "single";
 
@@ -90,22 +91,7 @@ export default async function CartaoDetailPage({
         </Link>
       </div>
 
-      {/* Seletor de mês */}
-      <div className="flex items-center justify-between rounded-xl bg-white p-2 shadow-sm dark:bg-neutral-900">
-        <Link
-          href={`/cartoes/${id}?mes=${shiftReferenceMonth(refMonth, -1)}`}
-          className="rounded-lg p-2 text-neutral-500"
-        >
-          <ChevronLeft size={20} />
-        </Link>
-        <span className="text-sm font-semibold">{formatMonthLabel(refMonth)}</span>
-        <Link
-          href={`/cartoes/${id}?mes=${shiftReferenceMonth(refMonth, 1)}`}
-          className="rounded-lg p-2 text-neutral-500"
-        >
-          <ChevronRight size={20} />
-        </Link>
-      </div>
+      <MonthNav basePath={`/cartoes/${id}`} refMonth={refMonth} />
 
       {/* Resumo da fatura */}
       <div
