@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Plus, Repeat } from "lucide-react";
+import { Plus, Repeat } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { currentReferenceMonth, formatDayMonth, formatMonthLabel, shiftReferenceMonth } from "@/lib/date";
+import { currentReferenceMonth, formatDayMonth } from "@/lib/date";
 import { formatCents } from "@/lib/money";
 import { DeleteButton } from "@/components/delete-button";
+import { MonthNav } from "@/components/month-nav";
 import { deleteIncome } from "./actions";
 
 export default async function RecebimentosPage({
@@ -35,15 +36,7 @@ export default async function RecebimentosPage({
         </Link>
       </div>
 
-      <div className="flex items-center justify-between rounded-xl bg-white p-2 shadow-sm dark:bg-neutral-900">
-        <Link href={`/recebimentos?mes=${shiftReferenceMonth(refMonth, -1)}`} className="p-2 text-neutral-500">
-          <ChevronLeft size={20} />
-        </Link>
-        <span className="text-sm font-semibold">{formatMonthLabel(refMonth)}</span>
-        <Link href={`/recebimentos?mes=${shiftReferenceMonth(refMonth, 1)}`} className="p-2 text-neutral-500">
-          <ChevronRight size={20} />
-        </Link>
-      </div>
+      <MonthNav basePath="/recebimentos" refMonth={refMonth} />
 
       <div className="rounded-2xl bg-brand p-4 text-white shadow-sm">
         <p className="text-xs opacity-90">Total recebido no mês</p>
