@@ -96,3 +96,20 @@ export function invoiceRefForPurchase(purchaseDate: string, cycle: CardCycle): I
   const [ry, rm0] = referenceMonthFor(purchaseDate, cycle.closingDay);
   return invoiceRefForMonth(ry, rm0, cycle);
 }
+
+/**
+ * Inverte `invoiceRefForMonth`: dado o VENCIMENTO impresso na fatura e o ciclo do
+ * cartão, devolve a competência (`YYYY-MM-01`). É o que usamos na importação —
+ * o vencimento é o campo mais confiável do PDF, e a competência do app é o mês em
+ * que a fatura FECHA, não o do vencimento.
+ *
+ * Regra (espelho de `invoiceRefForMonth`): se `dueDay > closingDay`, o vencimento
+ * cai no próprio mês de competência; caso contrário, no mês seguinte — então
+ * recuamos um mês. Só o mês/ano do vencimento importa (o dia não é usado).
+ */
+export function referenceMonthFromDueDate(dueDate: string, cycle: CardCycle): string {
+  const [dy, dm0] = ymd(dueDate);
+  const [ry, rm0] =
+    cycle.dueDay > cycle.closingDay ? [dy, dm0] : addMonths(dy, dm0, -1);
+  return toISO(ry, rm0, 1);
+}
