@@ -29,6 +29,7 @@ function MonthlyTooltip({
     <div className="rounded-xl border border-neutral-200 bg-white/95 px-3 py-2 shadow-lg backdrop-blur dark:border-neutral-700 dark:bg-neutral-800/95">
       <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
         {bar.label}
+        {bar.forecast ? " · previsto" : ""}
       </p>
       <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">
         {formatCents(bar.value)}
@@ -70,14 +71,18 @@ export interface CategorySlice {
 export interface MonthlyBar {
   label: string;
   value: number; // centavos
+  /** Mês seguinte projetado (ainda não fechado) — exibido com estilo distinto no gráfico. */
+  forecast?: boolean;
 }
 
 export function SpendingCharts({
   byCategory,
   monthly,
+  forecastNext,
 }: {
   byCategory: CategorySlice[];
   monthly: MonthlyBar[];
+  forecastNext?: MonthlyBar;
 }) {
   const hasCategory = byCategory.some((c) => c.value > 0);
   const hasMonthly = monthly.some((m) => m.value > 0);
@@ -139,12 +144,18 @@ export function SpendingCharts({
         </section>
       )}
 
-      {hasMonthly && <MonthlyChart monthly={monthly} />}
+      {hasMonthly && <MonthlyChart monthly={monthly} forecastNext={forecastNext} />}
     </div>
   );
 }
 
-function MonthlyChart({ monthly }: { monthly: MonthlyBar[] }) {
+function MonthlyChart({
+  monthly,
+  forecastNext,
+}: {
+  monthly: MonthlyBar[];
+  forecastNext?: MonthlyBar;
+}) {
   const lastIdx = monthly.length - 1;
   const current = monthly[lastIdx];
   const previous = monthly[lastIdx - 1];
@@ -158,6 +169,11 @@ function MonthlyChart({ monthly }: { monthly: MonthlyBar[] }) {
   const deltaUp = delta !== null && delta > 0;
   const deltaDown = delta !== null && delta < 0;
   const DeltaIcon = deltaUp ? ArrowUpRight : deltaDown ? ArrowDownRight : Minus;
+
+  // O mês previsto entra só no gráfico (não mexe no total/variação do card, que
+  // seguem refletindo o mês corrente já fechado/em andamento).
+  const chartData = forecastNext ? [...monthly, forecastNext] : monthly;
+  const forecastIdx = forecastNext ? chartData.length - 1 : -1;
 
   return (
     <section className="rounded-2xl bg-white p-4 shadow-sm dark:bg-neutral-900">
@@ -188,7 +204,7 @@ function MonthlyChart({ monthly }: { monthly: MonthlyBar[] }) {
       </div>
 
       <ResponsiveContainer width="100%" height={150}>
-        <BarChart data={monthly} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
+        <BarChart data={chartData} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
           <CartesianGrid
             vertical={false}
             stroke="currentColor"
@@ -208,16 +224,25 @@ function MonthlyChart({ monthly }: { monthly: MonthlyBar[] }) {
             cursor={{ fill: "rgba(22,163,74,0.07)", radius: 6 }}
           />
           <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={44}>
-            {monthly.map((m, i) => (
+            {chartData.map((m, i) => (
               <Cell
                 key={m.label}
-                fill={BRAND}
+                fill={i === forecastIdx ? "transparent" : BRAND}
+                stroke={i === forecastIdx ? BRAND : "none"}
+                strokeWidth={i === forecastIdx ? 1.5 : 0}
+                strokeDasharray={i === forecastIdx ? "4 3" : undefined}
                 fillOpacity={i === lastIdx ? 1 : 0.3}
               />
             ))}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
+      {forecastNext && (
+        <p className="mt-2 flex items-center gap-1.5 text-[11px] text-neutral-400 dark:text-neutral-500">
+          <span className="inline-block h-2 w-2 rounded-sm border border-dashed border-brand" />
+          previsto para {forecastNext.label}: {formatCents(forecastNext.value)}
+        </p>
+      )}
     </section>
   );
 }

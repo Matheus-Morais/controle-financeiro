@@ -37,7 +37,7 @@ export function InvoicePaidToggle({
           }
         })
       }
-      className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold shadow-sm ring-1 backdrop-blur transition disabled:opacity-70 ${
+      className={`flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold shadow-sm ring-1 backdrop-blur transition disabled:opacity-70 ${
         paid
           ? "bg-white/95 text-emerald-700 ring-black/5 hover:bg-white"
           : "bg-white/15 text-white ring-white/30 hover:bg-white/25"
