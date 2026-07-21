@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { expenseSchema, parseSource } from "@/lib/schemas";
 import { generateInstallments } from "@/lib/installments";
-import { invoiceRefForMonth, ymd } from "@/lib/invoice";
+import { invoiceRefForMonth, clampDay, toISO, ymd } from "@/lib/invoice";
 
 type ActionState = { error?: string } | undefined;
 
@@ -99,17 +99,22 @@ export async function updateExpense(
   const { error: delErr } = await supabase.from("installments").delete().eq("transaction_id", id);
   if (delErr) return { error: delErr.message };
 
+  const purchaseDay = ymd(e.purchase_date)[2];
   const { error: instErr } = await supabase.from("installments").insert(
-    parcels.map((p) => ({
-      user_id: user.id,
-      transaction_id: id,
-      card_id: source.kind === "card" ? source.id : null,
-      account_id: source.kind === "account" ? source.id : null,
-      number: p.number,
-      amount_cents: p.amountCents,
-      reference_month: p.referenceMonth,
-      status: paidMonths.has(p.referenceMonth) ? ("paid" as const) : ("open" as const),
-    })),
+    parcels.map((p) => {
+      const [py, pm0] = ymd(p.referenceMonth);
+      return {
+        user_id: user.id,
+        transaction_id: id,
+        card_id: source.kind === "card" ? source.id : null,
+        account_id: source.kind === "account" ? source.id : null,
+        number: p.number,
+        amount_cents: p.amountCents,
+        reference_month: p.referenceMonth,
+        due_date: source.kind === "account" ? toISO(py, pm0, clampDay(purchaseDay, py, pm0)) : null,
+        status: paidMonths.has(p.referenceMonth) ? ("paid" as const) : ("open" as const),
+      };
+    }),
   );
   if (instErr) return { error: instErr.message };
 
@@ -137,6 +142,6 @@ export async function updateExpense(
   redirect(
     source.kind === "card"
       ? `/cartoes/${source.id}${month ? `?mes=${month}` : ""}`
-      : "/",
+      : "/contas",
   );
 }

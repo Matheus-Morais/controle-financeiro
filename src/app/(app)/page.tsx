@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CreditCard, PiggyBank, Repeat, Target, TrendingDown, TrendingUp } from "lucide-react";
+import { CreditCard, PiggyBank, Receipt, Repeat, Target, TrendingDown, TrendingUp } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import {
   currentReferenceMonth,
@@ -138,8 +138,9 @@ export default async function DashboardPage({
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         <QuickLink href="/recebimentos" icon={<PiggyBank size={20} />} label="Renda" />
+        <QuickLink href="/contas" icon={<Receipt size={20} />} label="Contas" />
         <QuickLink href="/recorrentes" icon={<Repeat size={20} />} label="Recorrentes" />
         <QuickLink href="/orcamento" icon={<Target size={20} />} label="Orçamento" />
       </div>

@@ -82,6 +82,16 @@ export const recurringSchema = z.object({
 
 export type RecurringInput = z.infer<typeof recurringSchema>;
 
+export const accountTypeSchema = z.enum(["wallet", "checking", "cash", "pix", "other"]);
+
+export const accountSchema = z.object({
+  name: z.string().trim().min(1, "Informe um nome").max(40),
+  type: accountTypeSchema.default("other"),
+  color: z.string().trim().max(20).optional().or(z.literal("")),
+});
+
+export type AccountInput = z.infer<typeof accountSchema>;
+
 export const categorySchema = z.object({
   name: z.string().trim().min(1, "Informe um nome").max(50),
   color: z.string().trim().max(20).optional().or(z.literal("")),
