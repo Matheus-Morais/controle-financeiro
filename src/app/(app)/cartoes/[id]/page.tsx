@@ -153,7 +153,7 @@ export default async function CartaoDetailPage({
         </div>
 
         {invoice && (
-          <div className="mt-3 flex justify-end">
+          <div className="mt-2">
             <InvoicePaidToggle
               invoiceId={invoice.id}
               paid={invoice.status === "paid"}
