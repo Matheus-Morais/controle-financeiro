@@ -40,6 +40,13 @@ export function ConfirmCardModal({
   onCancel: () => void;
   onCardCreated: (card: Card) => void;
 }) {
+  // Se os dígitos do PDF batem com um cartão cadastrado DIFERENTE do selecionado,
+  // a fatura provavelmente é daquele outro cartão — avisamos explicitamente.
+  const digitsCard = detectedDigits
+    ? cards.find((c) => c.last_four === detectedDigits)
+    : undefined;
+  const digitsMismatch = !!digitsCard && digitsCard.id !== cardId;
+
   const [creatingCard, setCreatingCard] = useState(false);
   const [name, setName] = useState("");
   const [lastFour, setLastFour] = useState(detectedDigits ?? "");
@@ -71,9 +78,11 @@ export function ConfirmCardModal({
             <div>
               <h2 className="text-lg font-bold">Confirme o cartão</h2>
               <p className="mt-1 text-sm text-neutral-500">
-                {detectedDigits
-                  ? `A fatura mostra o cartão ••${detectedDigits}, mas não achamos esse cartão cadastrado. Confira antes de importar:`
-                  : "Não conseguimos identificar o cartão pelo PDF. Confira se é este mesmo antes de importar:"}
+                {digitsMismatch
+                  ? `A fatura mostra o cartão ••${detectedDigits} (${digitsCard!.name}), diferente do selecionado. Confira antes de importar:`
+                  : detectedDigits
+                    ? `A fatura mostra o cartão ••${detectedDigits}, mas não achamos esse cartão cadastrado. Confira antes de importar:`
+                    : "Não conseguimos identificar o cartão pelo PDF. Confira se é este mesmo antes de importar:"}
               </p>
             </div>
 

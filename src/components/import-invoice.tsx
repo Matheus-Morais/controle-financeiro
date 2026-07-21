@@ -258,7 +258,14 @@ export function ImportInvoice({
       const byIssuer = !preselected && !byDigits ? matchCardByIssuer(inv, cardsList) : undefined;
       const chosen = preselected ?? byDigits ?? byIssuer ?? cardsList[0];
       setCardId(chosen?.id ?? "");
-      setCardConfident(!!preselected || !!byDigits);
+      // EXCEÇÃO à confiança do cartão de origem: se os últimos 4 dígitos do PDF
+      // batem com OUTRO cartão cadastrado, é provável que a fatura seja daquele
+      // cartão (o usuário abriu a importação do cartão errado). Nesse conflito
+      // NÃO dispensamos a confirmação — o modal avisa da divergência. Manter o
+      // cartão de origem pré-selecionado, mas sempre exigir o "ok" do usuário.
+      const digitsContradictSource =
+        !!preselected && !!byDigits && byDigits.id !== preselected.id;
+      setCardConfident(digitsContradictSource ? false : !!preselected || !!byDigits);
       setDetectedDigits(digits);
 
       // Competência: derivada do vencimento + ciclo do cartão escolhido; travada.
