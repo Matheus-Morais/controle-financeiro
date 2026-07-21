@@ -100,10 +100,15 @@ export function ImportInvoice({
   cards,
   categories,
   currentMonth,
+  initialCardId,
 }: {
   cards: Card[];
   categories: Category[];
   currentMonth: string; // YYYY-MM-01
+  // Cartão pré-selecionado quando a importação foi aberta a partir do detalhe de
+  // um cartão. Tem prioridade sobre a auto-detecção pós-upload — o usuário disse
+  // explicitamente de qual cartão é esta fatura.
+  initialCardId?: string;
 }) {
   const [phase, setPhase] = useState<"upload" | "review">("upload");
   const [file, setFile] = useState<File | null>(null);
@@ -113,7 +118,9 @@ export function ImportInvoice({
   const [extracted, setExtracted] = useState<ExtractedInvoice | null>(null);
   const [items, setItems] = useState<EditableItem[]>([]);
   const [cardsList, setCardsList] = useState<Card[]>(cards);
-  const [cardId, setCardId] = useState("");
+  const [cardId, setCardId] = useState(
+    initialCardId && cards.some((c) => c.id === initialCardId) ? initialCardId : "",
+  );
   const [referenceMonth, setReferenceMonth] = useState(currentMonth);
   // A competência é DERIVADA do vencimento + ciclo do cartão e fica travada por
   // padrão; o usuário pode destravar ("Ajustar") para corrigir manualmente.
@@ -237,16 +244,21 @@ export function ImportInvoice({
       setExtracted(inv);
       setItems(toEditableItems(inv, categories));
 
-      // Cartão: os últimos 4 dígitos são o sinal 100% confiável — quando batem,
-      // pré-selecionamos e dispensamos a confirmação. Sem dígitos, tentamos um
-      // palpite por emissor/bandeira só para pré-selecionar, mas SEM marcar como
-      // confiável (o usuário ainda confirma no modal). Último caso: 1º da lista.
+      // Cartão: se a importação foi aberta a partir de um cartão específico, ele
+      // manda — o usuário já disse de qual cartão é a fatura, então é confiável e
+      // dispensa a confirmação. Caso contrário, os últimos 4 dígitos são o sinal
+      // 100% confiável — quando batem, pré-selecionamos e dispensamos a confirmação.
+      // Sem dígitos, tentamos um palpite por emissor/bandeira só para pré-selecionar,
+      // mas SEM marcar como confiável (o usuário ainda confirma no modal). Último
+      // caso: 1º da lista.
       const digits = inv.ult4_digitos?.replace(/\D/g, "").slice(-4) || null;
+      const preselected =
+        initialCardId ? cardsList.find((c) => c.id === initialCardId) : undefined;
       const byDigits = digits ? cardsList.find((c) => c.last_four === digits) : undefined;
-      const byIssuer = !byDigits ? matchCardByIssuer(inv, cardsList) : undefined;
-      const chosen = byDigits ?? byIssuer ?? cardsList[0];
+      const byIssuer = !preselected && !byDigits ? matchCardByIssuer(inv, cardsList) : undefined;
+      const chosen = preselected ?? byDigits ?? byIssuer ?? cardsList[0];
       setCardId(chosen?.id ?? "");
-      setCardConfident(!!byDigits);
+      setCardConfident(!!preselected || !!byDigits);
       setDetectedDigits(digits);
 
       // Competência: derivada do vencimento + ciclo do cartão escolhido; travada.
