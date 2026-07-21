@@ -1,7 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
-import Link from "next/link";
+import { useState, useTransition } from "react";
 import { FileUp, PartyPopper } from "lucide-react";
 import { formatCents } from "@/lib/money";
 import { completeOnboarding } from "@/app/onboarding/actions";
@@ -18,6 +17,12 @@ export function StepFinal({
   budgetedCount: number;
 }) {
   const [pending, startTransition] = useTransition();
+  const [target, setTarget] = useState<"home" | "import" | null>(null);
+
+  function finish(redirectTo: "/" | "/gastos/importar") {
+    setTarget(redirectTo === "/" ? "home" : "import");
+    startTransition(() => completeOnboarding(redirectTo));
+  }
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 text-center">
@@ -53,18 +58,24 @@ export function StepFinal({
       </ul>
 
       {cardsCount > 0 && (
-        <Link href="/gastos/importar" className="flex items-center gap-2 text-sm font-medium text-brand">
-          <FileUp size={16} /> Importar sua primeira fatura em PDF
-        </Link>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => finish("/gastos/importar")}
+          className="flex items-center gap-2 text-sm font-medium text-brand disabled:opacity-60"
+        >
+          <FileUp size={16} />
+          {pending && target === "import" ? "Abrindo…" : "Importar sua primeira fatura em PDF"}
+        </button>
       )}
 
       <button
         type="button"
         disabled={pending}
-        onClick={() => startTransition(() => completeOnboarding())}
+        onClick={() => finish("/")}
         className="w-full rounded-xl bg-brand py-3 font-semibold text-white active:scale-[0.98] disabled:opacity-60"
       >
-        {pending ? "Entrando…" : "Ir para o Dashboard"}
+        {pending && target === "home" ? "Entrando…" : "Ir para o Dashboard"}
       </button>
     </div>
   );

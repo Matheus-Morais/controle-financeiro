@@ -96,10 +96,15 @@ export async function saveOnboardingIncome(
   return { income: { id: data.id, description: data.description, amountCents: data.amount_cents } };
 }
 
-/** Marca o onboarding como concluído (ou pulado) e manda para o dashboard. */
-export async function completeOnboarding(): Promise<void> {
+/**
+ * Marca o onboarding como concluído (ou pulado) e navega para `redirectTo`.
+ * Precisa limpar `onboarding_pending` ANTES de sair de /onboarding — senão o
+ * middleware redireciona qualquer outra rota (ex.: /gastos/importar) de volta
+ * para cá.
+ */
+export async function completeOnboarding(redirectTo: string = "/"): Promise<void> {
   const supabase = await createClient();
   await supabase.auth.updateUser({ data: { onboarding_pending: false } });
   revalidatePath("/");
-  redirect("/");
+  redirect(redirectTo);
 }
