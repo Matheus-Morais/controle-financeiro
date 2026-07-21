@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, FileUp, Pencil } from "lucide-react";
+import { CalendarCheck, CalendarClock, ChevronLeft, FileUp, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { currentReferenceMonth, shiftReferenceMonth } from "@/lib/date";
+import { currentReferenceMonth, formatDayMonth, shiftReferenceMonth } from "@/lib/date";
 import { invoiceRefForMonth, ymd } from "@/lib/invoice";
+import { resolveOpenMonths } from "@/lib/card-invoices";
 import { formatCents } from "@/lib/money";
 import { InvoiceTabs, type InvoiceItem } from "@/components/invoice-tabs";
 import { InvoicePaidToggle } from "@/components/invoice-paid-toggle";
@@ -26,7 +27,12 @@ export default async function CartaoDetailPage({
   const { data: card } = await supabase.from("cards").select("*").eq("id", id).single();
   if (!card) notFound();
 
-  const refMonth = mes ?? currentReferenceMonth();
+  // Sem `?mes`, cai na PRÓXIMA fatura em aberto: se a fatura do mês corrente já foi
+  // paga, progride para o mês seguinte (mesma lógica da lista de cartões). Com
+  // `?mes` presente (navegação explícita), respeita o mês pedido.
+  const currentMonth = currentReferenceMonth();
+  const openByCard = await resolveOpenMonths(supabase, [id], currentMonth);
+  const refMonth = mes ?? openByCard.get(id) ?? currentMonth;
 
   // Recorrentes são propagados a TODOS os meses: materializa (idempotente) o mês
   // exibido antes de ler a fatura, para que assinaturas ativas apareçam mesmo em
@@ -92,6 +98,7 @@ export default async function CartaoDetailPage({
     dueDay: card.due_day,
   });
   const dueDate = invoice?.due_date ?? computed.dueDate;
+  const closingDate = invoice?.closing_date ?? computed.closingDate;
 
   return (
     <div className="flex flex-col gap-4">
@@ -127,19 +134,34 @@ export default async function CartaoDetailPage({
       >
         <p className="text-xs opacity-90">Total da fatura</p>
         <p className="text-3xl font-bold">{formatCents(total)}</p>
-        <div className="mt-3 flex items-center justify-between">
-          <span className="text-xs opacity-90">
-            Vence em {dueDate.split("-").reverse().join("/")}
-          </span>
-          {invoice && (
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="flex items-center gap-2 rounded-xl bg-white/15 px-3 py-2">
+            <CalendarClock size={18} className="shrink-0 opacity-90" />
+            <div className="leading-tight">
+              <p className="text-[11px] uppercase tracking-wide opacity-80">Fecha</p>
+              <p className="text-sm font-semibold">{formatDayMonth(closingDate)}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 rounded-xl bg-white/15 px-3 py-2">
+            <CalendarCheck size={18} className="shrink-0 opacity-90" />
+            <div className="leading-tight">
+              <p className="text-[11px] uppercase tracking-wide opacity-80">Vence</p>
+              <p className="text-sm font-semibold">{formatDayMonth(dueDate)}</p>
+            </div>
+          </div>
+        </div>
+
+        {invoice && (
+          <div className="mt-3 flex justify-end">
             <InvoicePaidToggle
               invoiceId={invoice.id}
               paid={invoice.status === "paid"}
               cardId={id}
               currentMonth={refMonth}
             />
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       <InvoiceTabs groups={groups} currentMonth={refMonth} cardId={id} />
