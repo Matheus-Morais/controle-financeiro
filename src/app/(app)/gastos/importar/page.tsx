@@ -7,7 +7,12 @@ import { ImportInvoice } from "@/components/import-invoice";
 // A revisão dispara a gravação; a extração é na rota /api/faturas/importar.
 export const maxDuration = 60;
 
-export default async function ImportarFaturaPage() {
+export default async function ImportarFaturaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ cartao?: string }>;
+}) {
+  const { cartao } = await searchParams;
   const supabase = await createClient();
 
   const [{ data: cards }, { data: categories }] = await Promise.all([
@@ -20,11 +25,15 @@ export default async function ImportarFaturaPage() {
   ]);
 
   const hasCard = (cards?.length ?? 0) > 0;
+  // Cartão de origem (quando aberto pelo detalhe de um cartão): só vale se for um
+  // cartão ativo do usuário. Também define para onde o "voltar" retorna.
+  const fromCard = cartao && (cards ?? []).some((c) => c.id === cartao) ? cartao : undefined;
+  const backHref = fromCard ? `/cartoes/${fromCard}` : "/gastos/novo";
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        <Link href="/gastos/novo" className="text-neutral-500">
+        <Link href={backHref} className="text-neutral-500">
           <ChevronLeft />
         </Link>
         <h1 className="text-2xl font-bold">Importar fatura</h1>
@@ -35,6 +44,7 @@ export default async function ImportarFaturaPage() {
           cards={cards ?? []}
           categories={categories ?? []}
           currentMonth={currentReferenceMonth()}
+          initialCardId={fromCard}
         />
       ) : (
         <Link

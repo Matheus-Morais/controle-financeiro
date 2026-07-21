@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, Pencil } from "lucide-react";
+import { ChevronLeft, FileUp, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { currentReferenceMonth, shiftReferenceMonth } from "@/lib/date";
 import { invoiceRefForMonth, ymd } from "@/lib/invoice";
@@ -100,7 +100,19 @@ export default async function CartaoDetailPage({
           <ChevronLeft />
         </Link>
         <h1 className="min-w-0 flex-1 truncate text-2xl font-bold">{card.name}</h1>
-        <Link href={`/cartoes/${id}/editar`} className="text-neutral-500">
+        <Link
+          href={`/gastos/importar?cartao=${id}`}
+          className="text-neutral-500"
+          aria-label="Importar fatura deste cartão"
+          title="Importar fatura (PDF)"
+        >
+          <FileUp size={20} />
+        </Link>
+        <Link
+          href={`/cartoes/${id}/editar`}
+          className="text-neutral-500"
+          aria-label="Editar cartão"
+        >
           <Pencil size={20} />
         </Link>
       </div>
