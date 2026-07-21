@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendPush, type PushPayload } from "@/lib/push-server";
+import { formatCents } from "@/lib/money";
 import {
   materializeRecurringExpenses,
   materializeRecurringIncomes,
@@ -9,9 +10,13 @@ import {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+/** Janela (em dias) de antecedência do lembrete de conta a vencer. */
+const BILL_REMINDER_WINDOW_DAYS = 3;
+
 /**
  * Tick diário (Vercel Cron ~08:00 BRT). Decide, por usuário e no timezone dele:
  *  - Dia 1 do mês  → lembrete para marcar boletos pagos (se há faturas em aberto).
+ *  - Diariamente   → lembrete de contas (PIX/boleto/conta) vencendo nos próximos dias.
  *  - Dia da semana configurado → lembrete para atualizar os gastos da semana.
  * Idempotente via notification_log (unique user_id+type+sent_for).
  */
@@ -53,6 +58,31 @@ export async function GET(request: NextRequest) {
           body: "Confira suas faturas e marque os boletos pagos para não esquecer.",
           url: "/cartoes",
           tag: `monthly-${monthStart}`,
+        });
+      }
+    }
+
+    // ── Lembrete de contas a vencer (PIX/boleto/conta, fora do cartão) ────
+    if (p.monthly_reminder_enabled) {
+      const windowEnd = addDaysISO(isoDate, BILL_REMINDER_WINDOW_DAYS - 1);
+      const { data: bills } = await supabase
+        .from("installments")
+        .select("amount_cents")
+        .eq("user_id", p.user_id)
+        .eq("status", "open")
+        .not("account_id", "is", null)
+        .is("deleted_at", null)
+        .gte("due_date", isoDate)
+        .lte("due_date", windowEnd);
+
+      if (bills?.length && (await claim(supabase, p.user_id, "bills", isoDate))) {
+        const total = bills.reduce((s, b) => s + b.amount_cents, 0);
+        const n = bills.length;
+        sent += await pushToUser(supabase, p.user_id, {
+          title: "Contas a vencer 🧾",
+          body: `${n} conta${n > 1 ? "s" : ""} de ${formatCents(total)} vencendo nos próximos dias. Toque para conferir.`,
+          url: "/contas",
+          tag: `bills-${isoDate}`,
         });
       }
     }
@@ -101,11 +131,19 @@ function localCalendar(now: Date, timeZone: string) {
   };
 }
 
+/** Soma `days` dias a uma data ISO `YYYY-MM-DD`, retornando ISO. */
+function addDaysISO(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
+}
+
 /** Registra a intenção de envio; retorna false se já foi enviado (dedupe). */
 async function claim(
   supabase: ReturnType<typeof createServiceClient>,
   userId: string,
-  type: "monthly" | "weekly",
+  type: "monthly" | "weekly" | "bills",
   sentFor: string,
 ): Promise<boolean> {
   const { error } = await supabase
