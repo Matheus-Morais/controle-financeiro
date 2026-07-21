@@ -103,7 +103,7 @@ export default async function CartoesPage() {
                     <ChevronRight size={18} className="opacity-80" />
                   </div>
 
-                  <div className="flex items-center gap-2 rounded-xl bg-white/15 px-3 py-2 text-sm font-medium">
+                  <div className="inline-flex w-fit items-center gap-2 self-start rounded-xl bg-white/15 px-3 py-2 text-sm font-medium">
                     <CalendarClock size={16} className="shrink-0 opacity-90" />
                     <span>
                       Fecha {formatDayMonth(ref.closingDate)} · Vence {formatDayMonth(ref.dueDate)}
