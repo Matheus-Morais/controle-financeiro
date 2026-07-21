@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
+import { ResumeRefresh } from "@/components/resume-refresh";
 
 export const metadata: Metadata = {
   title: "Controle Financeiro",
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         {children}
         <ServiceWorkerRegister />
+        <ResumeRefresh />
       </body>
     </html>
   );
