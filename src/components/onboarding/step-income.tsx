@@ -22,6 +22,8 @@ function SubmitButton({ disabled }: { disabled: boolean }) {
   );
 }
 
+type RecurringMode = "day_of_month" | "nth_business_day";
+
 export function StepIncome({
   today,
   incomes,
@@ -37,6 +39,7 @@ export function StepIncome({
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(saveOnboardingIncome, undefined);
   const [amount, setAmount] = useState("");
+  const [mode, setMode] = useState<RecurringMode>("day_of_month");
   const formRef = useRef<HTMLFormElement>(null);
   const cents = useMemo(() => parseBRLToCents(amount), [amount]);
 
@@ -77,7 +80,7 @@ export function StepIncome({
         className="mt-4 flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm dark:bg-neutral-900"
       >
         <input type="hidden" name="receipt_date" value={today} />
-        <input type="hidden" name="recurring_mode" value="day_of_month" />
+        <input type="hidden" name="recurring_mode" value={mode} />
         <input type="hidden" name="amount_cents" value={cents ?? ""} />
 
         <label className="flex flex-col gap-1 text-sm">
@@ -91,17 +94,44 @@ export function StepIncome({
           />
         </label>
 
-        <div className="grid grid-cols-2 gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            Valor por mês
-            <input
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="R$ 0,00"
-              className="rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-lg dark:border-neutral-700 dark:bg-neutral-950"
-            />
-          </label>
+        <label className="flex flex-col gap-1 text-sm">
+          Valor por mês
+          <input
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="R$ 0,00"
+            className="rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-lg dark:border-neutral-700 dark:bg-neutral-950"
+          />
+        </label>
+
+        <fieldset className="flex flex-col gap-2 text-sm">
+          Quando recebe todo mês
+          <div className="flex gap-2">
+            {(
+              [
+                ["day_of_month", "Dia fixo"],
+                ["nth_business_day", "Dia útil"],
+              ] as const
+            ).map(([value, label]) => (
+              <label key={value} className="flex-1">
+                <input
+                  type="radio"
+                  name="recurring_mode_radio"
+                  value={value}
+                  checked={mode === value}
+                  onChange={() => setMode(value)}
+                  className="peer sr-only"
+                />
+                <span className="block cursor-pointer rounded-xl border border-neutral-300 py-2 text-center text-xs font-medium peer-checked:border-brand peer-checked:bg-brand/10 peer-checked:text-brand dark:border-neutral-700">
+                  {label}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        {mode === "day_of_month" ? (
           <label className="flex flex-col gap-1 text-sm">
             Dia do recebimento
             <input
@@ -113,7 +143,22 @@ export function StepIncome({
               className="rounded-xl border border-neutral-300 bg-white px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-950"
             />
           </label>
-        </div>
+        ) : (
+          <label className="flex flex-col gap-1 text-sm">
+            Qual dia útil (ex.: 5 = 5º dia útil)
+            <input
+              name="recurring_business_day"
+              type="number"
+              min={1}
+              max={23}
+              defaultValue={5}
+              className="rounded-xl border border-neutral-300 bg-white px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-950"
+            />
+            <span className="text-xs text-neutral-500">
+              Calculado todo mês, pulando fins de semana e feriados nacionais.
+            </span>
+          </label>
+        )}
 
         {state?.error && <p className="text-sm text-red-600">{state.error}</p>}
         <SubmitButton disabled={!cents || cents <= 0} />
