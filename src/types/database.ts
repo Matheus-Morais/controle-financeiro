@@ -9,11 +9,11 @@
  * implícita e fazem a inferência colapsar para `never`).
  */
 
-export type AccountType = "wallet" | "checking" | "cash";
+export type AccountType = "wallet" | "checking" | "cash" | "pix" | "other";
 export type ExpenseKind = "single" | "installment" | "recurring";
 export type InstallmentStatus = "open" | "paid";
 export type InvoiceStatus = "open" | "paid";
-export type NotificationType = "monthly" | "weekly";
+export type NotificationType = "monthly" | "weekly" | "bills";
 
 type Timestamps = { created_at: string };
 
@@ -101,6 +101,8 @@ export type Installment = Timestamps & {
   amount_cents: number;
   reference_month: string;
   status: InstallmentStatus;
+  /** Vencimento da conta (só em parcelas de origem conta; null em cartões). */
+  due_date: string | null;
   /** Marcado quando a parcela é "excluída" (soft-delete); null = ativa. */
   deleted_at: string | null;
 };

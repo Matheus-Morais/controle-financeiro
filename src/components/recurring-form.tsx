@@ -38,7 +38,7 @@ export function RecurringForm({
         <input
           name="description"
           required
-          placeholder="Ex.: Netflix"
+          placeholder="Ex.: Netflix, Luz, Internet"
           className="rounded-xl border border-neutral-300 bg-white px-3 py-3 dark:border-neutral-700 dark:bg-neutral-900"
         />
       </label>

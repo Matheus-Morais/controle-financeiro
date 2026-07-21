@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { expenseSchema, parseSource } from "@/lib/schemas";
 import { generateInstallments } from "@/lib/installments";
-import { invoiceRefForMonth, ymd } from "@/lib/invoice";
+import { invoiceRefForMonth, clampDay, toISO, ymd } from "@/lib/invoice";
 
 type ActionState = { error?: string } | undefined;
 
@@ -66,18 +66,24 @@ export async function createExpense(_prev: ActionState, formData: FormData): Pro
     .single();
   if (txErr || !tx) return { error: txErr?.message ?? "Falha ao salvar o gasto." };
 
-  // 2) parcelas
+  // 2) parcelas. Contas (origem conta) guardam o vencimento (due_date) no dia
+  //    da compra, ajustado ao mês de cada parcela; cartões usam invoices.
+  const purchaseDay = ymd(e.purchase_date)[2];
   const { error: instErr } = await supabase.from("installments").insert(
-    parcels.map((p) => ({
-      user_id: user.id,
-      transaction_id: tx.id,
-      card_id: source.kind === "card" ? source.id : null,
-      account_id: source.kind === "account" ? source.id : null,
-      number: p.number,
-      amount_cents: p.amountCents,
-      reference_month: p.referenceMonth,
-      status: "open" as const,
-    })),
+    parcels.map((p) => {
+      const [py, pm0] = ymd(p.referenceMonth);
+      return {
+        user_id: user.id,
+        transaction_id: tx.id,
+        card_id: source.kind === "card" ? source.id : null,
+        account_id: source.kind === "account" ? source.id : null,
+        number: p.number,
+        amount_cents: p.amountCents,
+        reference_month: p.referenceMonth,
+        due_date: source.kind === "account" ? toISO(py, pm0, clampDay(purchaseDay, py, pm0)) : null,
+        status: "open" as const,
+      };
+    }),
   );
   if (instErr) return { error: instErr.message };
 
@@ -102,5 +108,5 @@ export async function createExpense(_prev: ActionState, formData: FormData): Pro
   }
 
   revalidatePath("/", "layout");
-  redirect(source.kind === "card" ? `/cartoes/${source.id}` : "/");
+  redirect(source.kind === "card" ? `/cartoes/${source.id}` : "/contas");
 }

@@ -22,7 +22,7 @@ export default async function NovaRecorrentePage() {
         <Link href="/recorrentes" className="text-neutral-500">
           <ChevronLeft />
         </Link>
-        <h1 className="text-2xl font-bold">Nova assinatura</h1>
+        <h1 className="text-2xl font-bold">Nova recorrente</h1>
       </div>
 
       {hasSource ? (

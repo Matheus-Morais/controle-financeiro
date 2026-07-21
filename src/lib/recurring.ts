@@ -85,6 +85,8 @@ export async function materializeRecurringExpenses(db: DB, userId: string, refMo
       number: 1,
       amount_cents: parcel.amountCents,
       reference_month: parcel.referenceMonth,
+      // Contas fixas (origem conta) guardam o vencimento; cartões usam invoices.
+      due_date: r.account_id && !r.card_id ? purchaseDate : null,
       status: "open",
     });
 
