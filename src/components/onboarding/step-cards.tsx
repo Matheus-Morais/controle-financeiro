@@ -4,11 +4,10 @@ import { useActionState, useEffect, useRef } from "react";
 import { useFormStatus } from "react-dom";
 import { CreditCard, FileUp, Plus } from "lucide-react";
 import { createOnboardingCard } from "@/app/onboarding/actions";
+import { CARD_COLORS } from "@/lib/card-colors";
 
 type CardSummary = { id: string; name: string; color: string | null };
 type ActionState = { error?: string; card?: CardSummary } | undefined;
-
-const COLORS = ["#16a34a", "#0ea5e9", "#8b5cf6", "#ef4444", "#f97316", "#ec4899", "#64748b"];
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -109,13 +108,20 @@ export function StepCards({
 
         <fieldset className="flex flex-col gap-2 text-sm">
           Cor
-          <div className="flex flex-wrap gap-2">
-            {COLORS.map((c, i) => (
-              <label key={c} className="cursor-pointer">
-                <input type="radio" name="color" value={c} defaultChecked={i === 0} className="peer sr-only" />
+          <div className="flex flex-wrap gap-2.5">
+            {CARD_COLORS.map((c, i) => (
+              <label key={c.hex} className="cursor-pointer" title={c.name}>
+                <input
+                  type="radio"
+                  name="color"
+                  value={c.hex}
+                  aria-label={c.name}
+                  defaultChecked={i === 0}
+                  className="peer sr-only"
+                />
                 <span
-                  className="block h-7 w-7 rounded-full ring-offset-2 peer-checked:ring-2 peer-checked:ring-neutral-900 dark:peer-checked:ring-white"
-                  style={{ backgroundColor: c }}
+                  className="block h-8 w-8 rounded-full ring-offset-2 ring-offset-white transition peer-checked:ring-2 peer-checked:ring-neutral-900 peer-hover:scale-110 dark:ring-offset-neutral-900 dark:peer-checked:ring-white"
+                  style={{ backgroundColor: c.hex }}
                 />
               </label>
             ))}

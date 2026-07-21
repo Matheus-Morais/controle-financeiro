@@ -2,40 +2,11 @@
 
 import { useActionState } from "react";
 import { SubmitButton } from "@/components/submit-button";
+import { CARD_COLORS } from "@/lib/card-colors";
 import type { Card } from "@/types/database";
 
 type ActionState = { error?: string } | undefined;
 type Action = (prev: ActionState, formData: FormData) => Promise<ActionState>;
-
-// Paleta inspirada nas cores de bancos e bandeiras conhecidos. Todos os tons são
-// escuros o bastante para contrastar com o texto branco impresso sobre o cartão.
-const COLORS = [
-  { hex: "#16a34a", name: "Verde" },
-  { hex: "#0fa958", name: "Verde PagBank" },
-  { hex: "#0f766e", name: "Verde-azulado" },
-  { hex: "#0891b2", name: "Ciano" },
-  { hex: "#0ea5e9", name: "Azul-céu" },
-  { hex: "#009ee3", name: "Azul Mercado Pago" },
-  { hex: "#003399", name: "Azul Itaú" },
-  { hex: "#1a1f71", name: "Azul Visa" },
-  { hex: "#001e62", name: "Azul-marinho BTG" },
-  { hex: "#4338ca", name: "Índigo" },
-  { hex: "#6366f1", name: "Índigo-claro" },
-  { hex: "#8b5cf6", name: "Violeta" },
-  { hex: "#820ad1", name: "Roxo Nubank" },
-  { hex: "#ec4899", name: "Rosa" },
-  { hex: "#e11d48", name: "Framboesa" },
-  { hex: "#cc092f", name: "Vermelho Bradesco" },
-  { hex: "#ec0000", name: "Vermelho Santander" },
-  { hex: "#ef4444", name: "Vermelho" },
-  { hex: "#ea580c", name: "Laranja" },
-  { hex: "#ff7a00", name: "Laranja Inter" },
-  { hex: "#ec7000", name: "Laranja Itaú" },
-  { hex: "#b45309", name: "Âmbar" },
-  { hex: "#64748b", name: "Ardósia" },
-  { hex: "#334155", name: "Grafite" },
-  { hex: "#1a1a1a", name: "Preto C6" },
-];
 
 export function CardForm({ action, card }: { action: Action; card?: Card }) {
   const [state, formAction] = useActionState(action, undefined);
@@ -105,7 +76,7 @@ export function CardForm({ action, card }: { action: Action; card?: Card }) {
       <fieldset className="flex flex-col gap-2 text-sm">
         Cor
         <div className="flex flex-wrap gap-2.5">
-          {COLORS.map((c, i) => (
+          {CARD_COLORS.map((c, i) => (
             <label key={c.hex} className="cursor-pointer" title={c.name}>
               <input
                 type="radio"
