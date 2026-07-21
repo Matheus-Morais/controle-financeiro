@@ -4,13 +4,15 @@ import { createClient } from "@/lib/supabase/server";
 import {
   currentReferenceMonth,
   formatDayMonth,
+  shiftReferenceMonth,
   shortMonthLabel,
   todayISO,
 } from "@/lib/date";
-import { monthCashFlow, monthlyTotals, spendingByCategory } from "@/lib/reports";
+import { monthCashFlow, monthlyTotals, spendingByCategory, type InvoiceDue } from "@/lib/reports";
 import { formatCents } from "@/lib/money";
 import { SpendingCharts, type CategorySlice } from "@/components/spending-charts";
 import { MonthNav } from "@/components/month-nav";
+import { materializeRecurringExpenses } from "@/lib/recurring";
 import type { InvoiceState } from "@/lib/invoice";
 
 const DEFAULT_TZ = "America/Sao_Paulo";
@@ -31,14 +33,27 @@ export default async function DashboardPage({
   const tz = profile?.timezone ?? DEFAULT_TZ;
   const today = todayISO(tz);
   const month = mes ?? currentReferenceMonth(tz);
+  const nextMonth = shiftReferenceMonth(month, 1);
 
-  const [{ data: cards }, { data: categories }, spending, monthly, flow] = await Promise.all([
-    supabase.from("cards").select("id, name").eq("active", true),
-    supabase.from("categories").select("id, name, color"),
-    spendingByCategory(supabase, month),
-    monthlyTotals(supabase, month, 6),
-    monthCashFlow(supabase, month, today),
-  ]);
+  // Materializa recorrentes do mês seguinte para que o "previsto" do gráfico já
+  // inclua assinaturas ainda não alcançadas pelo cron do dia 1 (mesmo padrão da
+  // lista de cartões).
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (user) {
+    await materializeRecurringExpenses(supabase, user.id, nextMonth);
+  }
+
+  const [{ data: cards }, { data: categories }, spending, monthly, flow, [forecastNext]] =
+    await Promise.all([
+      supabase.from("cards").select("id, name").eq("active", true),
+      supabase.from("categories").select("id, name, color"),
+      spendingByCategory(supabase, month),
+      monthlyTotals(supabase, month, 6),
+      monthCashFlow(supabase, month, today),
+      monthlyTotals(supabase, nextMonth, 1),
+    ]);
 
   // Gráficos permanecem por COMPETÊNCIA (o que foi lançado no mês).
   const byCategory: CategorySlice[] = [
@@ -50,6 +65,7 @@ export default async function DashboardPage({
     ...(spending.get("none") ? [{ name: "Sem categoria", value: spending.get("none")!, color: "#cbd5e1" }] : []),
   ];
   const monthlyBars = monthly.map((m) => ({ label: shortMonthLabel(m.month), value: m.cents }));
+  const forecastBar = { label: shortMonthLabel(nextMonth), value: forecastNext.cents, forecast: true };
   const hasChartData = byCategory.some((c) => c.value > 0) || monthlyBars.some((m) => m.value > 0);
 
   const firstName = profile?.display_name?.split(" ")[0] ?? "";
@@ -60,6 +76,11 @@ export default async function DashboardPage({
   const payHintParts: string[] = [];
   if (flow.invoicesTotal > 0) payHintParts.push(`${formatCents(flow.invoicesTotal)} em faturas`);
   if (flow.cashSpending > 0) payHintParts.push(`${formatCents(flow.cashSpending)} à vista`);
+
+  // Faturas do mês em duas seções: as ainda em aberto e as já pagas — ao marcar
+  // uma fatura como paga ela sai de uma lista e entra na outra.
+  const invoicesToPay = flow.invoicesDue.filter((inv) => inv.state !== "paid");
+  const invoicesPaid = flow.invoicesDue.filter((inv) => inv.state === "paid");
 
   return (
     <div className="flex flex-col gap-6">
@@ -97,33 +118,24 @@ export default async function DashboardPage({
           <p className="py-4 text-center text-sm text-neutral-500">Sem movimentações neste mês.</p>
         )}
 
-        {/* Faturas cujo vencimento cai neste mês */}
-        {flow.invoicesDue.length > 0 && (
+        {/* Faturas cujo vencimento cai neste mês, separadas por já resolvidas ou não */}
+        {invoicesToPay.length > 0 && (
           <section className="flex flex-col gap-2">
             <h2 className="font-semibold">Faturas a pagar</h2>
             <ul className="flex flex-col gap-2">
-              {flow.invoicesDue.map((inv) => (
-                <li key={inv.id}>
-                  <Link
-                    href={`/cartoes/${inv.cardId}?mes=${inv.referenceMonth}`}
-                    className="flex items-center justify-between gap-3 rounded-xl bg-white p-3 shadow-sm dark:bg-neutral-900"
-                  >
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: inv.cardColor }}
-                      />
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{inv.cardName}</p>
-                        <p className="text-xs text-neutral-500">vence em {formatDayMonth(inv.dueDate)}</p>
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1">
-                      <span className="font-semibold">{formatCents(inv.totalCents)}</span>
-                      <InvoiceStateBadge state={inv.state} />
-                    </div>
-                  </Link>
-                </li>
+              {invoicesToPay.map((inv) => (
+                <InvoiceRow key={inv.id} inv={inv} />
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {invoicesPaid.length > 0 && (
+          <section className="flex flex-col gap-2">
+            <h2 className="font-semibold">Faturas pagas</h2>
+            <ul className="flex flex-col gap-2">
+              {invoicesPaid.map((inv) => (
+                <InvoiceRow key={inv.id} inv={inv} />
               ))}
             </ul>
           </section>
@@ -133,7 +145,7 @@ export default async function DashboardPage({
         {hasChartData && (
           <div className="flex flex-col gap-2">
             <p className="text-xs text-neutral-500">Gastos lançados no mês (competência)</p>
-            <SpendingCharts byCategory={byCategory} monthly={monthlyBars} />
+            <SpendingCharts byCategory={byCategory} monthly={monthlyBars} forecastNext={forecastBar} />
           </div>
         )}
       </div>
@@ -186,6 +198,32 @@ function InvoiceStateBadge({ state }: { state: InvoiceState }) {
   const { label, className } = STATE_STYLES[state];
   return (
     <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${className}`}>{label}</span>
+  );
+}
+
+function InvoiceRow({ inv }: { inv: InvoiceDue }) {
+  return (
+    <li>
+      <Link
+        href={`/cartoes/${inv.cardId}?mes=${inv.referenceMonth}`}
+        className="flex items-center justify-between gap-3 rounded-xl bg-white p-3 shadow-sm dark:bg-neutral-900"
+      >
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span
+            className="h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{ backgroundColor: inv.cardColor }}
+          />
+          <div className="min-w-0">
+            <p className="truncate font-medium">{inv.cardName}</p>
+            <p className="text-xs text-neutral-500">vence em {formatDayMonth(inv.dueDate)}</p>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span className="font-semibold">{formatCents(inv.totalCents)}</span>
+          <InvoiceStateBadge state={inv.state} />
+        </div>
+      </Link>
+    </li>
   );
 }
 
