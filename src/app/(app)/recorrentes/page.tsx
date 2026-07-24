@@ -2,8 +2,10 @@ import Link from "next/link";
 import { Plus, Repeat } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { formatCents } from "@/lib/money";
+import { currentReferenceMonth, formatMonthLabel } from "@/lib/date";
 import { DeleteButton } from "@/components/delete-button";
 import { RecurringToggle } from "@/components/recurring-toggle";
+import { ChangeCardModal } from "@/components/change-card-modal";
 import { deleteRecurring } from "./actions";
 
 export default async function RecorrentesPage() {
@@ -14,13 +16,19 @@ export default async function RecorrentesPage() {
       .from("recurring_expenses")
       .select("id, description, amount_cents, billing_day, card_id, account_id, active")
       .order("created_at", { ascending: false }),
-    supabase.from("cards").select("id, name"),
+    supabase.from("cards").select("id, name, active"),
     supabase.from("accounts").select("id, name"),
   ]);
 
   const nameById = new Map<string, string>();
   for (const c of cards ?? []) nameById.set(c.id, c.name);
   for (const a of accounts ?? []) nameById.set(a.id, a.name);
+
+  // Cartões ativos como destino da troca de cartão.
+  const activeCards = (cards ?? [])
+    .filter((c) => c.active)
+    .map((c) => ({ id: c.id, name: c.name }));
+  const monthLabel = formatMonthLabel(currentReferenceMonth());
 
   const activeTotal = (recurrings ?? [])
     .filter((r) => r.active)
@@ -64,6 +72,13 @@ export default async function RecorrentesPage() {
                 <div className="flex items-center gap-1">
                   <span className="font-semibold">{formatCents(r.amount_cents)}</span>
                   <RecurringToggle id={r.id} active={r.active} />
+                  <ChangeCardModal
+                    recurringId={r.id}
+                    description={r.description}
+                    currentCardId={r.card_id}
+                    monthLabel={monthLabel}
+                    cards={activeCards}
+                  />
                   <DeleteButton
                     onDelete={deleteRecurring.bind(null, r.id)}
                     confirmText="Excluir assinatura? Lançamentos já criados serão mantidos."

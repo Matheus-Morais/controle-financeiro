@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import { generateInstallments } from "./installments";
 import { invoiceRefForMonth, clampDay, toISO, ymd } from "./invoice";
 import { nthBusinessDay } from "./business-days";
 import { shiftReferenceMonth } from "./date";
@@ -52,13 +51,10 @@ export async function materializeRecurringExpenses(db: DB, userId: string, refMo
     const closingDay = card?.closing_day ?? ACCOUNT_CLOSING_DAY;
     const dueDay = card?.due_day ?? ACCOUNT_CLOSING_DAY;
 
-    const [parcel] = generateInstallments({
-      totalAmountCents: r.amount_cents,
-      count: 1,
-      purchaseDate,
-      closingDay,
-    });
-
+    // Competência do recorrente = o próprio mês materializado. Diferente de uma
+    // compra avulsa, o recorrente NÃO é empurrado para a fatura seguinte quando o
+    // billing_day cai depois do fechamento: ele sempre entra na fatura do mês.
+    // O billing_day é só a data de referência da cobrança (purchase_date).
     const { data: tx } = await db
       .from("transactions")
       .insert({
@@ -83,16 +79,15 @@ export async function materializeRecurringExpenses(db: DB, userId: string, refMo
       card_id: r.card_id,
       account_id: r.account_id,
       number: 1,
-      amount_cents: parcel.amountCents,
-      reference_month: parcel.referenceMonth,
+      amount_cents: r.amount_cents,
+      reference_month: refMonth,
       // Contas fixas (origem conta) guardam o vencimento; cartões usam invoices.
       due_date: r.account_id && !r.card_id ? purchaseDate : null,
       status: "open",
     });
 
     if (r.card_id) {
-      const [py, pm0] = ymd(parcel.referenceMonth);
-      const ref = invoiceRefForMonth(py, pm0, { closingDay, dueDay });
+      const ref = invoiceRefForMonth(ry, rm0, { closingDay, dueDay });
       await db.from("invoices").upsert(
         {
           user_id: userId,
