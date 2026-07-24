@@ -143,8 +143,9 @@ export function isImportable(tipo: ExtractedTipo): boolean {
 }
 
 /**
- * Chave estável de deduplicação de um lançamento de fatura.
+ * Chave estável de deduplicação de um lançamento À VISTA de fatura.
  * Usa o nome BRUTO da fatura (não o nome amigável, que o usuário pode trocar).
+ * Serve para itens de mês único; parcelados usam `installmentSignature`.
  */
 export function dedupeKey(
   statementDescription: string,
@@ -152,6 +153,41 @@ export function dedupeKey(
   purchaseDate: string,
 ): string {
   return `${normalizeText(statementDescription)}|${amountCents}|${purchaseDate}`;
+}
+
+/**
+ * Token de parcela em QUALQUER posição do nome, não só no fim:
+ * "01/04", "(1/4)", "Parcela 1 de 4", "PARC 01/04". Diferente de
+ * `INSTALLMENT_SUFFIX` (que só limpa o título amigável no fim), este é usado
+ * para neutralizar o contador dentro do nome bruto ao gerar a assinatura.
+ */
+const INSTALLMENT_TOKEN =
+  /\(?\s*(?:parcela\s+|parc\.?\s+)?\d{1,3}\s*(?:\/|\s+de\s+)\s*\d{1,3}\s*\)?/gi;
+
+/**
+ * Assinatura estável de uma COMPRA PARCELADA, para deduplicar entre faturas de
+ * meses diferentes — o caso em que a dedupe por (nome+valor+data no mês) falha.
+ *
+ * Ao subir a fatura do mês seguinte, a MESMA compra parcelada reaparece, mas:
+ * - o número da parcela no nome muda ("01/03" → "02/03") — removido aqui;
+ * - a parcela cai num mês onde uma parcela futura JÁ foi materializada num
+ *   upload anterior — por isso a comparação é feita no cartão inteiro, sem mês;
+ * - a data da compra pode ser reinterpretada pela IA entre faturas — ignorada.
+ *
+ * Sobram os comparáveis estáveis que identificam a mesma compra parcelada:
+ * nome (sem contador) + valor da parcela + total de parcelas. Como o usuário
+ * pode comprar parcelado no mesmo lugar mais de uma vez, o nome sozinho não
+ * basta — o total de parcelas e o valor da parcela é que dão a discriminação.
+ */
+export function installmentSignature(
+  statementDescription: string,
+  parcelAmountCents: number,
+  totalInstallments: number,
+): string {
+  const merchant = normalizeText(
+    statementDescription.replace(INSTALLMENT_TOKEN, " ").replace(/\s+/g, " "),
+  );
+  return `${merchant}|${parcelAmountCents}|${totalInstallments}`;
 }
 
 /** Sinônimos comuns → nome canônico (normalizado) das categorias semeadas. */
