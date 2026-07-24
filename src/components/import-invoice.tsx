@@ -8,6 +8,7 @@ import { formatCents, parseBRLToCents } from "@/lib/money";
 import { referenceMonthFromDueDate } from "@/lib/invoice";
 import {
   dedupeKey,
+  installmentSignature,
   isImportable,
   matchCategoryByName,
   normalizeText,
@@ -125,7 +126,12 @@ export function ImportInvoice({
   // A competência é DERIVADA do vencimento + ciclo do cartão e fica travada por
   // padrão; o usuário pode destravar ("Ajustar") para corrigir manualmente.
   const [competenceLocked, setCompetenceLocked] = useState(true);
-  const [existingKeys, setExistingKeys] = useState<Set<string>>(new Set());
+  // Chaves já importadas: exatas por competência (à vista) + assinaturas de
+  // parcelamento válidas no cartão inteiro (ver getExistingInvoiceKeys).
+  const [existingKeys, setExistingKeys] = useState<{
+    exact: Set<string>;
+    installment: Set<string>;
+  }>({ exact: new Set(), installment: new Set() });
 
   // Cartão veio de um match confiável (últimos 4 dígitos do PDF) ou de um
   // fallback (nenhum cartão bateu, caiu no primeiro da lista)? No segundo caso
@@ -169,7 +175,14 @@ export function ImportInvoice({
     if (phase !== "review" || !cardId || !referenceMonth) return;
     let active = true;
     getExistingInvoiceKeys(cardId, referenceMonth)
-      .then((keys) => active && setExistingKeys(new Set(keys)))
+      .then(
+        (res) =>
+          active &&
+          setExistingKeys({
+            exact: new Set(res.exactKeys),
+            installment: new Set(res.installmentSignatures),
+          }),
+      )
       .catch(() => {});
     return () => {
       active = false;
@@ -177,13 +190,18 @@ export function ImportInvoice({
   }, [phase, cardId, referenceMonth]);
 
   // Marca duplicatas e desmarca por padrão (mantém a escolha manual nos demais).
+  // Parcelado casa por assinatura no cartão inteiro; à vista, por chave exata no mês.
   useEffect(() => {
     setItems((prev) =>
       prev.map((it) => {
         if (!it.importable) return it;
-        const dup = existingKeys.has(
-          dedupeKey(it.statementDescription, parseBRLToCents(it.valorBrl) ?? 0, it.purchaseDate),
-        );
+        const cents = parseBRLToCents(it.valorBrl) ?? 0;
+        const isInstallment = !!it.parcela && it.parcela.total >= 2;
+        const dup = isInstallment
+          ? existingKeys.installment.has(
+              installmentSignature(it.statementDescription, cents, it.parcela!.total),
+            )
+          : existingKeys.exact.has(dedupeKey(it.statementDescription, cents, it.purchaseDate));
         return { ...it, duplicate: dup, include: dup ? false : it.include };
       }),
     );

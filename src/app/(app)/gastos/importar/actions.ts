@@ -9,6 +9,7 @@ import {
   buildImportRows,
   dedupeKey,
   importPayloadSchema,
+  installmentSignature,
   type ValidatedImportItem,
 } from "@/lib/invoice-import";
 
@@ -142,42 +143,62 @@ export async function importarGastosDaFatura(
 }
 
 /**
- * Chaves de deduplicação dos lançamentos já existentes num (cartão, competência).
- * Usado pela tela de revisão para marcar linhas já importadas antes de gravar.
+ * Chaves de deduplicação dos lançamentos já existentes num cartão, para a tela de
+ * revisão marcar linhas já importadas antes de gravar. Duas famílias:
+ *
+ * - `exactKeys`: itens À VISTA já importados NESTA competência (nome+valor+data).
+ *   Mês único basta — um gasto à vista não se espalha por outros meses.
+ * - `installmentSignatures`: assinaturas de compras PARCELADAS em QUALQUER mês do
+ *   cartão. É o que evita a duplicação ao subir a fatura do mês seguinte: as
+ *   parcelas futuras já foram materializadas em uploads anteriores, então a
+ *   mesma compra reaparece num mês onde já existe parcela. A comparação por
+ *   nome+valor+data no mês não pega isso (o contador de parcela muda no nome, a
+ *   parcela vive em outro mês, a data pode variar) — a assinatura, sim.
  */
 export async function getExistingInvoiceKeys(
   cardId: string,
   referenceMonth: string,
-): Promise<string[]> {
-  if (!/^[0-9a-f-]{36}$/i.test(cardId) || !/^\d{4}-\d{2}-01$/.test(referenceMonth)) return [];
+): Promise<{ exactKeys: string[]; installmentSignatures: string[] }> {
+  const empty = { exactKeys: [], installmentSignatures: [] };
+  if (!/^[0-9a-f-]{36}$/i.test(cardId) || !/^\d{4}-\d{2}-01$/.test(referenceMonth)) return empty;
 
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return [];
+  if (!user) return empty;
 
+  // Parcelas vivas do cartão inteiro (todos os meses) — cobre à vista (filtrado
+  // por mês abaixo) e parceladas (assinatura no cartão todo) num só round-trip.
   const { data: installments } = await supabase
     .from("installments")
-    .select("amount_cents, transaction_id")
+    .select("amount_cents, transaction_id, reference_month")
     .eq("card_id", cardId)
-    .eq("reference_month", referenceMonth)
     .is("deleted_at", null);
 
-  if (!installments?.length) return [];
+  if (!installments?.length) return empty;
 
   const txIds = [...new Set(installments.map((i) => i.transaction_id))];
   const { data: txs } = await supabase
     .from("transactions")
-    .select("id, statement_description, purchase_date")
+    .select("id, statement_description, purchase_date, installments_count")
     .in("id", txIds);
   const txById = new Map((txs ?? []).map((t) => [t.id, t]));
 
-  const keys: string[] = [];
+  const exactKeys: string[] = [];
+  const installmentSignatures: string[] = [];
   for (const it of installments) {
     const tx = txById.get(it.transaction_id);
     if (!tx?.statement_description) continue; // só o que veio de import tem nome bruto
-    keys.push(dedupeKey(tx.statement_description, it.amount_cents, tx.purchase_date));
+    if ((tx.installments_count ?? 1) >= 2) {
+      // Compra parcelada: assinatura estável, válida para qualquer mês.
+      installmentSignatures.push(
+        installmentSignature(tx.statement_description, it.amount_cents, tx.installments_count),
+      );
+    } else if (it.reference_month === referenceMonth) {
+      // À vista: só interessa a duplicata na própria competência.
+      exactKeys.push(dedupeKey(tx.statement_description, it.amount_cents, tx.purchase_date));
+    }
   }
-  return keys;
+  return { exactKeys, installmentSignatures };
 }

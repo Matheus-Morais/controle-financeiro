@@ -3,6 +3,7 @@ import {
   buildImportRows,
   dedupeKey,
   importPayloadSchema,
+  installmentSignature,
   isImportable,
   matchCategoryByName,
   reconcile,
@@ -66,6 +67,40 @@ describe("dedupeKey", () => {
   it("difere por valor ou data", () => {
     expect(dedupeKey("X", 100, "2026-07-01")).not.toBe(dedupeKey("X", 101, "2026-07-01"));
     expect(dedupeKey("X", 100, "2026-07-01")).not.toBe(dedupeKey("X", 100, "2026-07-02"));
+  });
+});
+
+describe("installmentSignature", () => {
+  it("é estável quando só muda o CONTADOR de parcela no nome (o bug)", () => {
+    // Mesma compra, faturas de meses diferentes: "01/03" vira "02/03" no nome.
+    const s1 = installmentSignature("LOJA X 01/03", 20000, 3);
+    const s2 = installmentSignature("LOJA X 02/03", 20000, 3);
+    const s3 = installmentSignature("LOJA X 03/03", 20000, 3);
+    expect(s1).toBe(s2);
+    expect(s2).toBe(s3);
+  });
+
+  it("remove o contador em vários formatos e ignora acento/caixa", () => {
+    const base = installmentSignature("Magazine", 5000, 4);
+    expect(installmentSignature("MAGAZINE (1/4)", 5000, 4)).toBe(base);
+    expect(installmentSignature("Magazine 1/4", 5000, 4)).toBe(base);
+    expect(installmentSignature("Magazine Parcela 1 de 4", 5000, 4)).toBe(base);
+    expect(installmentSignature("MAGAZINE PARC 01/04", 5000, 4)).toBe(base);
+  });
+
+  it("NÃO depende da data da compra (a IA pode reinterpretar entre faturas)", () => {
+    // A assinatura não recebe data — duas leituras da mesma compra colidem.
+    expect(installmentSignature("LOJA X 01/03", 20000, 3)).toBe(
+      installmentSignature("LOJA X 02/03", 20000, 3),
+    );
+  });
+
+  it("diferencia por valor da parcela ou total de parcelas (compras distintas)", () => {
+    // Comprar parcelado no MESMO lugar mais de uma vez: nome igual, mas valor
+    // ou nº de parcelas diferente ⇒ assinaturas diferentes (não é duplicata).
+    const base = installmentSignature("LOJA X 01/03", 20000, 3);
+    expect(installmentSignature("LOJA X 01/06", 20000, 6)).not.toBe(base); // total difere
+    expect(installmentSignature("LOJA X 01/03", 15000, 3)).not.toBe(base); // valor difere
   });
 });
 
