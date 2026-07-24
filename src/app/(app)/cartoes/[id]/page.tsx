@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CalendarCheck, CalendarClock, ChevronLeft, FileUp, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { currentReferenceMonth, formatDayMonth, shiftReferenceMonth } from "@/lib/date";
+import { currentReferenceMonth, formatDayMonth } from "@/lib/date";
 import { invoiceRefForMonth, ymd } from "@/lib/invoice";
 import { resolveOpenMonths } from "@/lib/card-invoices";
 import { formatCents } from "@/lib/money";
@@ -36,14 +36,13 @@ export default async function CartaoDetailPage({
 
   // Recorrentes são propagados a TODOS os meses: materializa (idempotente) o mês
   // exibido antes de ler a fatura, para que assinaturas ativas apareçam mesmo em
-  // meses que o cron do dia 1 ainda não alcançou (passado/futuro navegável).
-  // Materializa também o mês anterior: uma compra recorrente de M-1 cujo billing_day
-  // cai após o fechamento entra na fatura de M, então M-1 precisa estar materializado.
+  // meses que o cron do dia 1 ainda não alcançou (passado/futuro navegável). A
+  // competência do recorrente é sempre o próprio mês (ver lib/recurring.ts), então
+  // basta materializar o mês exibido.
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (user) {
-    await materializeRecurringExpenses(supabase, user.id, shiftReferenceMonth(refMonth, -1));
     await materializeRecurringExpenses(supabase, user.id, refMonth);
   }
 

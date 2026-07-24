@@ -5,7 +5,9 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { recurringSchema, parseSource } from "@/lib/schemas";
 import { materializeRecurringExpenses } from "@/lib/recurring";
-import { currentReferenceMonth } from "@/lib/date";
+import { currentReferenceMonth, shiftReferenceMonth } from "@/lib/date";
+
+const UUID_RE = /^[0-9a-f-]{36}$/i;
 
 type ActionState = { error?: string } | undefined;
 
@@ -43,6 +45,87 @@ export async function createRecurring(
   revalidatePath("/recorrentes");
   revalidatePath("/", "layout");
   redirect("/recorrentes");
+}
+
+/**
+ * Troca o cartão cobrado por uma assinatura, com corte de ciclo:
+ *
+ * - `currentMonthCharged = true`  → o mês atual permanece no cartão/origem antigo;
+ *   o novo cartão assume a partir do mês seguinte.
+ * - `currentMonthCharged = false` → o mês atual (e os seguintes) já vão para o novo
+ *   cartão; a ocorrência do mês atual no cartão antigo é removida.
+ *
+ * Competências anteriores ao corte permanecem como transações no cartão antigo
+ * (histórico preservado). As posteriores materializam no novo cartão (sob demanda
+ * ao navegar / cron do dia 1).
+ */
+export async function changeRecurringCard(
+  recurringId: string,
+  newCardId: string,
+  currentMonthCharged: boolean,
+): Promise<{ error?: string }> {
+  if (!UUID_RE.test(recurringId) || !UUID_RE.test(newCardId)) {
+    return { error: "Dados inválidos." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado." };
+
+  const { data: rec } = await supabase
+    .from("recurring_expenses")
+    .select("id, card_id")
+    .eq("id", recurringId)
+    .eq("user_id", user.id)
+    .single();
+  if (!rec) return { error: "Assinatura não encontrada." };
+  if (rec.card_id === newCardId) return { error: "Selecione um cartão diferente do atual." };
+
+  const { data: card } = await supabase
+    .from("cards")
+    .select("id")
+    .eq("id", newCardId)
+    .eq("user_id", user.id)
+    .single();
+  if (!card) return { error: "Cartão de destino não encontrado." };
+
+  const currentMonth = currentReferenceMonth();
+  // Mês a partir do qual o novo cartão passa a cobrar.
+  const cutover = currentMonthCharged ? shiftReferenceMonth(currentMonth, 1) : currentMonth;
+
+  // Se o mês atual já foi cobrado, ele fica na origem antiga: garante que esteja
+  // materializado lá antes da troca (o usuário pode não ter aberto a fatura ainda).
+  if (currentMonthCharged) {
+    await materializeRecurringExpenses(supabase, user.id, currentMonth);
+  }
+
+  // Remove as ocorrências já materializadas na origem antiga a partir do corte
+  // (ex.: meses futuros criados ao navegar). O cascade da FK apaga as parcelas.
+  await supabase
+    .from("transactions")
+    .delete()
+    .eq("recurring_id", recurringId)
+    .gte("purchase_date", cutover);
+
+  // Passa o template para o novo cartão. Daqui pra frente as materializações caem
+  // no cartão novo; as competências anteriores seguem no cartão antigo.
+  const { error: updErr } = await supabase
+    .from("recurring_expenses")
+    .update({ card_id: newCardId, account_id: null })
+    .eq("id", recurringId);
+  if (updErr) return { error: updErr.message };
+
+  // Novo cartão já assume o mês atual → materializa agora para refletir na fatura
+  // corrente sem precisar navegar.
+  if (!currentMonthCharged) {
+    await materializeRecurringExpenses(supabase, user.id, currentMonth);
+  }
+
+  revalidatePath("/recorrentes");
+  revalidatePath("/", "layout");
+  return {};
 }
 
 export async function toggleRecurringActive(id: string, active: boolean): Promise<void> {
