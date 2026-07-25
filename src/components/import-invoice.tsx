@@ -2,24 +2,33 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Lock, Pencil, Unlock } from "lucide-react";
+import { AlertTriangle, ChevronDown, Lock, Unlock } from "lucide-react";
 import { Spinner, WaveformLoader } from "@/components/loader";
 import { formatCents, parseBRLToCents } from "@/lib/money";
 import { referenceMonthFromDueDate } from "@/lib/invoice";
+import { formatDayMonth } from "@/lib/date";
 import {
-  dedupeKey,
-  installmentSignature,
+  classifyReviewItem,
   isImportable,
   matchCategoryByName,
   normalizeText,
   reconcile,
+  resolveInvoiceItem,
   stripInstallmentSuffix,
+  type ExistingOccurrence,
+  type ExistingRecurring,
   type ExtractedInvoice,
   type ExtractedTipo,
+  type ReviewGroupKey,
 } from "@/lib/invoice-import";
-import { getExistingInvoiceKeys, importarGastosDaFatura } from "@/app/(app)/gastos/importar/actions";
+import {
+  getExistingInvoiceContext,
+  importarGastosDaFatura,
+} from "@/app/(app)/gastos/importar/actions";
 import { ConfirmCardModal } from "@/components/confirm-card-modal";
 import { CardSelect } from "@/components/card-select";
+import { MonthStepper } from "@/components/month-stepper";
+import { ImportReviewItem, type EditableItem } from "@/components/import-review-item";
 
 const MAX_BYTES = 4 * 1024 * 1024;
 
@@ -36,22 +45,6 @@ interface Category {
   name: string;
 }
 
-interface EditableItem {
-  id: string;
-  statementDescription: string; // nome bruto da fatura (imutável, usado na dedupe)
-  description: string; // nome amigável (editável, sem o token de parcela)
-  valorBrl: string; // editável
-  purchaseDate: string; // YYYY-MM-DD, editável
-  categoryId: string; // "" ou uuid
-  tipo: ExtractedTipo;
-  parcela: { atual: number; total: number } | null; // parcela lida da fatura
-  importable: boolean;
-  include: boolean;
-  duplicate: boolean;
-  suggestedRecurring: boolean; // IA sinalizou como provável recorrente
-  markAsRecurring: boolean; // usuário quer criar como recorrente
-}
-
 const TIPO_LABEL: Record<ExtractedTipo, string> = {
   compra: "Compra",
   credito: "Crédito/estorno",
@@ -59,6 +52,23 @@ const TIPO_LABEL: Record<ExtractedTipo, string> = {
   pagamento: "Pagamento",
   outro: "Outro",
 };
+
+/** Subgrupos de cada seção, na ordem em que aparecem na tela. */
+const NEW_GROUPS: { key: ReviewGroupKey; label: string }[] = [
+  { key: "new-installment", label: "Parcelados" },
+  { key: "new-single", label: "À vista" },
+  { key: "new-recurring", label: "Recorrentes" },
+];
+// "À vista" só existe aqui quando o mesmo PDF é subido duas vezes; fica por
+// último e, como todo subgrupo, só é renderizado quando tem item.
+const EXISTING_GROUPS: { key: ReviewGroupKey; label: string }[] = [
+  { key: "existing-installment", label: "Parcelados" },
+  { key: "existing-recurring", label: "Recorrentes" },
+  { key: "existing-single", label: "À vista" },
+];
+
+const sumItems = (list: EditableItem[]) =>
+  list.reduce((s, it) => s + (parseBRLToCents(it.valorBrl) ?? 0), 0);
 
 function toEditableItems(inv: ExtractedInvoice, categories: Category[]): EditableItem[] {
   return inv.itens.map((it, i) => ({
@@ -74,7 +84,9 @@ function toEditableItems(inv: ExtractedInvoice, categories: Category[]): Editabl
     parcela: it.parcela,
     importable: isImportable(it.tipo),
     include: isImportable(it.tipo),
-    duplicate: false,
+    match: null,
+    linkedRecurringId: null,
+    linkedRecurringName: null,
     suggestedRecurring: it.sugerido_recorrente,
     markAsRecurring: false,
   }));
@@ -126,12 +138,13 @@ export function ImportInvoice({
   // A competência é DERIVADA do vencimento + ciclo do cartão e fica travada por
   // padrão; o usuário pode destravar ("Ajustar") para corrigir manualmente.
   const [competenceLocked, setCompetenceLocked] = useState(true);
-  // Chaves já importadas: exatas por competência (à vista) + assinaturas de
-  // parcelamento válidas no cartão inteiro (ver getExistingInvoiceKeys).
-  const [existingKeys, setExistingKeys] = useState<{
-    exact: Set<string>;
-    installment: Set<string>;
-  }>({ exact: new Set(), installment: new Set() });
+  // O que o cartão já tem: ocorrências gravadas (todos os meses) + assinaturas
+  // vigentes na competência. É o que separa "novo" de "já importado".
+  const [existing, setExisting] = useState<{
+    occurrences: ExistingOccurrence[];
+    recurrings: ExistingRecurring[];
+  }>({ occurrences: [], recurrings: [] });
+  const [showExisting, setShowExisting] = useState(false);
 
   // Cartão veio de um match confiável (últimos 4 dígitos do PDF) ou de um
   // fallback (nenhum cartão bateu, caiu no primeiro da lista)? No segundo caso
@@ -170,49 +183,55 @@ export function ImportInvoice({
     }
   }, [saveState, router]);
 
-  // Busca as chaves já importadas quando muda cartão/competência.
+  // Busca o que já existe na competência quando muda cartão/competência.
   useEffect(() => {
     if (phase !== "review" || !cardId || !referenceMonth) return;
     let active = true;
-    getExistingInvoiceKeys(cardId, referenceMonth)
-      .then(
-        (res) =>
-          active &&
-          setExistingKeys({
-            exact: new Set(res.exactKeys),
-            installment: new Set(res.installmentSignatures),
-          }),
-      )
+    getExistingInvoiceContext(cardId, referenceMonth)
+      .then((ctx) => active && setExisting(ctx))
       .catch(() => {});
     return () => {
       active = false;
     };
   }, [phase, cardId, referenceMonth]);
 
-  // Marca duplicatas e desmarca por padrão (mantém a escolha manual nos demais).
-  // Parcelado casa por assinatura no cartão inteiro; à vista, por chave exata no mês.
+  // Casa cada lançamento com o que já está gravado: o que já existe é desmarcado
+  // (o usuário ainda pode remarcar) e o que bate com uma assinatura cadastrada
+  // nasce vinculado a ela, para não duplicar o template na gravação.
   useEffect(() => {
     setItems((prev) =>
       prev.map((it) => {
         if (!it.importable) return it;
-        const cents = parseBRLToCents(it.valorBrl) ?? 0;
-        const isInstallment = !!it.parcela && it.parcela.total >= 2;
-        const dup = isInstallment
-          ? existingKeys.installment.has(
-              installmentSignature(it.statementDescription, cents, it.parcela!.total),
-            )
-          : existingKeys.exact.has(dedupeKey(it.statementDescription, cents, it.purchaseDate));
-        return { ...it, duplicate: dup, include: dup ? false : it.include };
+        const matchable = {
+          statementDescription: it.statementDescription,
+          description: it.description,
+          amountCents: parseBRLToCents(it.valorBrl) ?? 0,
+          purchaseDate: it.purchaseDate,
+          parcela: it.parcela,
+        };
+        const { match, recurring } = resolveInvoiceItem(
+          matchable,
+          existing.occurrences,
+          existing.recurrings,
+          referenceMonth,
+        );
+        // Só vincula quando o item ainda vai ser gravado; o que já existe não
+        // precisa de template (e não deve nascer marcado como recorrente).
+        const template = match ? null : recurring;
+        return {
+          ...it,
+          match,
+          linkedRecurringId: template?.id ?? null,
+          linkedRecurringName: template?.description ?? null,
+          markAsRecurring: template ? true : it.markAsRecurring,
+          include: match ? false : it.include,
+        };
       }),
     );
-  }, [existingKeys]);
+  }, [existing, referenceMonth]);
 
   const updateItem = (id: string, patch: Partial<EditableItem>) =>
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
-
-  const categoryName = (id: string) => categories.find((c) => c.id === id)?.name;
-  const shortDate = (iso: string) =>
-    iso && iso.length >= 10 ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : iso;
 
   // Deriva a competência (`YYYY-MM-01`) do VENCIMENTO extraído + ciclo do cartão.
   // É o cálculo determinístico pedido: a competência do app é o mês em que a
@@ -319,10 +338,29 @@ export function ImportInvoice({
   const includedSum = included.reduce((s, it) => s + (parseBRLToCents(it.valorBrl) ?? 0), 0);
   const hasInvalid = included.some((it) => (parseBRLToCents(it.valorBrl) ?? 0) <= 0);
 
-  // Lista principal = itens importáveis (duplicados entram aqui, marcados e esmaecidos).
-  // Pulados = itens não importáveis (pagamento, encargo, etc.) — vão para uma seção compacta.
-  const mainItems = items.filter((it) => it.importable);
+  // Itens importáveis divididos em Novos × Já importados, cada um por natureza do
+  // gasto. Marcar um item como recorrente o move de "À vista" para "Recorrentes"
+  // na hora, porque o grupo é derivado do estado.
+  const groups = useMemo(() => {
+    const g: Record<ReviewGroupKey, EditableItem[]> = {
+      "new-installment": [],
+      "new-single": [],
+      "new-recurring": [],
+      "existing-installment": [],
+      "existing-single": [],
+      "existing-recurring": [],
+    };
+    for (const it of items) {
+      if (!it.importable) continue;
+      g[classifyReviewItem(it)].push(it);
+    }
+    return g;
+  }, [items]);
+
+  // Pulados = itens não importáveis (pagamento, crédito) — seção compacta no fim.
   const skippedItems = items.filter((it) => !it.importable);
+  const newItems = NEW_GROUPS.flatMap((g) => groups[g.key]);
+  const existingItems = EXISTING_GROUPS.flatMap((g) => groups[g.key]);
 
   function handleSave() {
     if (!cardId || included.length === 0 || hasInvalid) return;
@@ -344,9 +382,41 @@ export function ImportInvoice({
         purchase_date: it.purchaseDate,
         category_id: it.categoryId || "",
         parcela: it.parcela,
-        mark_as_recurring: it.markAsRecurring,
+        // Vinculado a uma assinatura existente → usa o template dela; senão, o
+        // "marcar recorrente" cria um novo.
+        mark_as_recurring: it.markAsRecurring && !it.linkedRecurringId,
+        recurring_id: it.linkedRecurringId,
       })),
     });
+  }
+
+  /** Um subgrupo (Parcelados / À vista / Recorrentes); some quando vazio. */
+  function renderGroup(label: string, list: EditableItem[]) {
+    if (list.length === 0) return null;
+    return (
+      <div key={label} className="flex flex-col gap-2">
+        <div className="flex items-baseline justify-between gap-2 px-1">
+          <h3 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
+            {label} · {list.length}
+          </h3>
+          <span className="text-[11px] tabular-nums text-neutral-400">
+            {formatCents(sumItems(list))}
+          </span>
+        </div>
+        <ul className="flex flex-col gap-2.5">
+          {list.map((it) => (
+            <ImportReviewItem
+              key={it.id}
+              item={it}
+              categories={categories}
+              isEditing={editingIds.has(it.id)}
+              onToggleEdit={() => toggleEditing(it.id)}
+              onChange={(patch) => updateItem(it.id, patch)}
+            />
+          ))}
+        </ul>
+      </div>
+    );
   }
 
   // ── Fase 1: upload ──────────────────────────────────────────────────────
@@ -393,23 +463,30 @@ export function ImportInvoice({
   // ── Fase 2: revisão ─────────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-3">
-        <label className="flex flex-col gap-1 text-sm text-neutral-500">
+      {/* Cabeçalho: cartão e competência em linhas de largura total — o mês por
+          extenso não cabia no campo de meia coluna. */}
+      <div className="flex flex-col gap-3 rounded-2xl bg-white p-3.5 shadow-sm ring-1 ring-neutral-200/70 dark:bg-neutral-900 dark:ring-white/5">
+        <label className="flex flex-col gap-1.5 text-xs font-medium uppercase tracking-wide text-neutral-400">
           Cartão
           <CardSelect
             cards={cardsList}
             value={cardId}
             onChange={selectCard}
-            className="rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+            className="rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
           />
         </label>
-        <div className="flex flex-col gap-1 text-sm text-neutral-500">
-          <div className="flex items-center justify-between gap-1">
-            <span>Competência</span>
+
+        <div className="h-px bg-neutral-100 dark:bg-neutral-800" />
+
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+              Competência
+            </span>
             <button
               type="button"
               onClick={() => setCompetenceLocked((v) => !v)}
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-brand"
+              className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[11px] font-medium text-brand"
               aria-pressed={competenceLocked}
             >
               {competenceLocked ? (
@@ -423,18 +500,16 @@ export function ImportInvoice({
               )}
             </button>
           </div>
-          <input
-            type="month"
-            value={referenceMonth.slice(0, 7)}
+          <MonthStepper
+            value={referenceMonth}
+            onChange={setReferenceMonth}
             disabled={competenceLocked}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (/^\d{4}-\d{2}$/.test(v)) setReferenceMonth(`${v}-01`);
-            }}
-            className={`rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 ${
-              competenceLocked ? "cursor-not-allowed opacity-60" : ""
-            }`}
           />
+          {extracted?.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(extracted.vencimento) && (
+            <p className="text-[11px] text-neutral-400">
+              Vencimento impresso na fatura: {formatDayMonth(extracted.vencimento)}
+            </p>
+          )}
         </div>
       </div>
 
@@ -449,166 +524,59 @@ export function ImportInvoice({
         </div>
       )}
 
-      <ul className="flex flex-col gap-2.5">
-        {mainItems.map((it) => {
-          const cents = parseBRLToCents(it.valorBrl);
-          const invalid = it.include && (cents == null || cents <= 0);
-          const isEditing = editingIds.has(it.id);
-          const catName = categoryName(it.categoryId);
-          return (
-            <li
-              key={it.id}
-              className={`rounded-2xl bg-white p-3.5 shadow-sm transition dark:bg-neutral-900 ${
-                isEditing
-                  ? "ring-2 ring-brand/40"
-                  : invalid
-                    ? "ring-1 ring-red-300 dark:ring-red-500/40"
-                    : "ring-1 ring-neutral-200/70 dark:ring-white/5"
-              } ${it.include ? "" : "opacity-60"}`}
-            >
-              <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  checked={it.include}
-                  onChange={(e) => updateItem(it.id, { include: e.target.checked })}
-                  className="h-5 w-5 shrink-0 rounded accent-brand"
-                  aria-label={`Incluir ${it.description}`}
-                />
-                {isEditing ? (
-                  <input
-                    value={it.description}
-                    onChange={(e) => updateItem(it.id, { description: e.target.value })}
-                    className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-2.5 py-2 text-sm font-medium dark:border-neutral-700 dark:bg-neutral-800"
-                    placeholder="Nome do gasto"
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => toggleEditing(it.id)}
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="truncate font-medium">{it.description || "Sem nome"}</span>
-                        <span
-                          className={`shrink-0 font-semibold tabular-nums ${invalid ? "text-red-600 dark:text-red-400" : ""}`}
-                        >
-                          {formatCents(cents ?? 0)}
-                        </span>
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-neutral-500">
-                        <span
-                          className={
-                            catName
-                              ? "rounded-md bg-neutral-100 px-1.5 py-0.5 dark:bg-neutral-800"
-                              : "italic text-neutral-400"
-                          }
-                        >
-                          {catName ?? "Sem categoria"}
-                        </span>
-                        {it.parcela && (
-                          <span className="rounded-md bg-brand/10 px-1.5 py-0.5 font-medium text-brand">
-                            Parcela {it.parcela.atual}/{it.parcela.total}
-                          </span>
-                        )}
-                        {it.markAsRecurring && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
-                            ✓ Recorrente
-                          </span>
-                        )}
-                        {it.suggestedRecurring && !it.markAsRecurring && (
-                          <span className="rounded-full border border-dashed border-emerald-400/70 px-1.5 py-0.5 text-emerald-600 dark:text-emerald-400">
-                            ↻ recorrente?
-                          </span>
-                        )}
-                        {it.duplicate && (
-                          <span className="rounded-md bg-neutral-100 px-1.5 py-0.5 text-neutral-400 dark:bg-neutral-800">
-                            já importado
-                          </span>
-                        )}
-                        <span>{shortDate(it.purchaseDate)}</span>
-                      </div>
-                    </div>
-                    <Pencil size={15} className="shrink-0 text-neutral-300 dark:text-neutral-600" />
-                  </button>
-                )}
-              </div>
+      {/* ── Novos ── */}
+      <section className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between gap-2 px-1">
+          <h2 className="text-sm font-bold">Novos</h2>
+          <span className="text-xs text-neutral-500">
+            {newItems.length} {newItems.length === 1 ? "item" : "itens"} ·{" "}
+            <span className="font-semibold tabular-nums">{formatCents(sumItems(newItems))}</span>
+          </span>
+        </div>
+        {newItems.length === 0 ? (
+          <p className="rounded-2xl bg-white px-4 py-6 text-center text-sm text-neutral-500 shadow-sm ring-1 ring-neutral-200/70 dark:bg-neutral-900 dark:ring-white/5">
+            Nenhum lançamento novo — esta fatura já foi importada nesta competência.
+          </p>
+        ) : (
+          NEW_GROUPS.map((g) => renderGroup(g.label, groups[g.key]))
+        )}
+      </section>
 
-              {isEditing && (
-                <div className="mt-2.5 flex flex-col gap-2 pl-8">
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="flex flex-col gap-1 text-[11px] text-neutral-400">
-                      Valor
-                      <input
-                        inputMode="decimal"
-                        value={it.valorBrl}
-                        onChange={(e) => updateItem(it.id, { valorBrl: e.target.value })}
-                        placeholder="0,00"
-                        className={`rounded-lg border bg-neutral-50 px-2.5 py-2 text-sm dark:bg-neutral-800 ${
-                          invalid ? "border-red-400" : "border-neutral-200 dark:border-neutral-700"
-                        }`}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 text-[11px] text-neutral-400">
-                      Data
-                      <input
-                        type="date"
-                        value={it.purchaseDate}
-                        onChange={(e) => updateItem(it.id, { purchaseDate: e.target.value })}
-                        className="rounded-lg border border-neutral-200 bg-neutral-50 px-2.5 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
-                      />
-                    </label>
-                  </div>
-                  <select
-                    value={it.categoryId}
-                    onChange={(e) => updateItem(it.id, { categoryId: e.target.value })}
-                    className="rounded-lg border border-neutral-200 bg-neutral-50 px-2.5 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
-                  >
-                    <option value="">Sem categoria</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="flex items-center justify-between gap-2">
-                    {it.suggestedRecurring ? (
-                      <button
-                        type="button"
-                        onClick={() => updateItem(it.id, { markAsRecurring: !it.markAsRecurring })}
-                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition ${
-                          it.markAsRecurring
-                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
-                            : "border border-dashed border-emerald-400 text-emerald-700 dark:text-emerald-400"
-                        }`}
-                      >
-                        {it.markAsRecurring ? "✓ Recorrente" : "↻ Marcar recorrente"}
-                      </button>
-                    ) : (
-                      <span />
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => toggleEditing(it.id)}
-                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-brand"
-                    >
-                      Concluir
-                    </button>
-                  </div>
-                  {it.statementDescription && it.statementDescription !== it.description && (
-                    <p className="truncate text-[11px] text-neutral-400">{it.statementDescription}</p>
-                  )}
-                </div>
-              )}
-            </li>
-          );
-        })}
+      {/* ── Já importados (recolhido por padrão) ── */}
+      {existingItems.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <button
+            type="button"
+            onClick={() => setShowExisting((v) => !v)}
+            aria-expanded={showExisting}
+            className="flex items-center justify-between gap-2 rounded-2xl bg-white px-4 py-3 text-left shadow-sm ring-1 ring-neutral-200/70 dark:bg-neutral-900 dark:ring-white/5"
+          >
+            <span className="flex items-center gap-1.5 text-sm font-bold text-neutral-500">
+              <ChevronDown
+                size={16}
+                className={`transition-transform ${showExisting ? "" : "-rotate-90"}`}
+              />
+              Já importados
+            </span>
+            <span className="text-xs text-neutral-400">
+              {existingItems.length} {existingItems.length === 1 ? "item" : "itens"} ·{" "}
+              <span className="font-semibold tabular-nums">
+                {formatCents(sumItems(existingItems))}
+              </span>
+            </span>
+          </button>
+          {showExisting &&
+            EXISTING_GROUPS.map((g) => renderGroup(g.label, groups[g.key]))}
+        </section>
+      )}
 
-        {skippedItems.length > 0 && (
-          <>
-            <li className="px-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
-              Pulados ({skippedItems.length})
-            </li>
+      {/* ── Pulados ── */}
+      {skippedItems.length > 0 && (
+        <section className="flex flex-col gap-1">
+          <h2 className="px-1 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+            Pulados ({skippedItems.length})
+          </h2>
+          <ul>
             {skippedItems.map((it) => (
               <li key={it.id} className="flex items-center gap-3 rounded-xl px-3 py-2 opacity-70">
                 <span className="shrink-0 rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">
@@ -622,9 +590,9 @@ export function ImportInvoice({
                 </span>
               </li>
             ))}
-          </>
-        )}
-      </ul>
+          </ul>
+        </section>
+      )}
 
       <div className="flex items-center justify-between rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-neutral-200/70 dark:bg-neutral-900 dark:ring-white/5">
         <span className="text-sm text-neutral-500">

@@ -9,13 +9,50 @@ type DB = SupabaseClient<Database>;
 const ACCOUNT_CLOSING_DAY = 31;
 
 /**
+ * Quais destas assinaturas já têm ocorrência lançada na competência. Duas idas ao
+ * banco no total (em vez de uma por assinatura): as transações das assinaturas e
+ * as parcelas dessas transações na competência.
+ *
+ * Parcela com soft-delete CONTA como lançada — o usuário excluiu a ocorrência do
+ * mês de propósito; recriá-la no próximo tick seria ressuscitar o que ele apagou.
+ */
+async function materializedRecurringIds(
+  db: DB,
+  recurringIds: string[],
+  refMonth: string,
+): Promise<Set<string>> {
+  if (!recurringIds.length) return new Set();
+
+  const { data: txs } = await db
+    .from("transactions")
+    .select("id, recurring_id")
+    .in("recurring_id", recurringIds);
+  if (!txs?.length) return new Set();
+
+  const recurringByTx = new Map(txs.map((t) => [t.id, t.recurring_id]));
+  const { data: insts } = await db
+    .from("installments")
+    .select("transaction_id")
+    .eq("reference_month", refMonth)
+    .in(
+      "transaction_id",
+      txs.map((t) => t.id),
+    );
+
+  const ids = new Set<string>();
+  for (const i of insts ?? []) {
+    const recId = recurringByTx.get(i.transaction_id);
+    if (recId) ids.add(recId);
+  }
+  return ids;
+}
+
+/**
  * Materializa (idempotentemente) os gastos recorrentes ativos de um usuário no
  * mês `refMonth` (`YYYY-MM-01`): cria a transação + parcela única + fatura.
  * Chamado na criação (mês corrente) e no cron do dia 1 (novo mês).
  */
 export async function materializeRecurringExpenses(db: DB, userId: string, refMonth: string) {
-  const nextMonth = shiftReferenceMonth(refMonth, 1);
-
   const { data: recurrings } = await db
     .from("recurring_expenses")
     .select("id, card_id, account_id, category_id, description, amount_cents, billing_day")
@@ -33,16 +70,19 @@ export async function materializeRecurringExpenses(db: DB, userId: string, refMo
     : { data: [] };
   const cardById = new Map((cards ?? []).map((c) => [c.id, c]));
 
+  // Idempotência POR COMPETÊNCIA: uma assinatura já está lançada no mês quando
+  // tem parcela em `refMonth` — não quando tem transação com `purchase_date` no
+  // mês. A diferença importa para as ocorrências vindas de importação de fatura,
+  // cuja data de compra é a impressa no PDF e pode cair no mês anterior.
+  const materialized = await materializedRecurringIds(
+    db,
+    recurrings.map((r) => r.id),
+    refMonth,
+  );
+
   let created = 0;
   for (const r of recurrings) {
-    // Idempotência: já materializado neste mês?
-    const { count } = await db
-      .from("transactions")
-      .select("id", { head: true, count: "exact" })
-      .eq("recurring_id", r.id)
-      .gte("purchase_date", refMonth)
-      .lt("purchase_date", nextMonth);
-    if ((count ?? 0) > 0) continue;
+    if (materialized.has(r.id)) continue;
 
     const [ry, rm0] = ymd(refMonth);
     const purchaseDate = toISO(ry, rm0, clampDay(r.billing_day, ry, rm0));
