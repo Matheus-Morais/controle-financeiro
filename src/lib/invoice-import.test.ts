@@ -1,13 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
   buildImportRows,
+  classifyReviewItem,
   dedupeKey,
   importPayloadSchema,
   installmentSignature,
   isImportable,
   matchCategoryByName,
+  matchExistingOccurrence,
+  matchExistingRecurring,
   reconcile,
+  resolveInvoiceItem,
   stripInstallmentSuffix,
+  type ExistingOccurrence,
+  type ExistingRecurring,
+  type MatchableItem,
   type ValidatedImportItem,
 } from "./invoice-import";
 
@@ -101,6 +108,301 @@ describe("installmentSignature", () => {
     const base = installmentSignature("LOJA X 01/03", 20000, 3);
     expect(installmentSignature("LOJA X 01/06", 20000, 6)).not.toBe(base); // total difere
     expect(installmentSignature("LOJA X 01/03", 15000, 3)).not.toBe(base); // valor difere
+  });
+});
+
+describe("matchExistingOccurrence", () => {
+  const REF = "2026-08-01";
+
+  // Assinatura materializada pelo cron: sem nome bruto, data = billing_day.
+  const netflixDoCron: ExistingOccurrence = {
+    transactionId: "tx-net",
+    kind: "recurring",
+    statementDescription: null,
+    description: "Netflix",
+    amountCents: 3990,
+    purchaseDate: "2026-08-15",
+    referenceMonth: REF,
+    number: 1,
+    installmentsCount: 1,
+    recurringId: "rec-net",
+  };
+  // Parcela de um parcelamento importado em julho: a cadeia inteira (1..10) já
+  // foi materializada, então a ocorrência vive em OUTRA competência.
+  const parcelaPropagada: ExistingOccurrence = {
+    transactionId: "tx-loja",
+    kind: "installment",
+    statementDescription: "LOJA X 01/10",
+    description: "Loja X",
+    amountCents: 20000,
+    purchaseDate: "2026-07-10",
+    referenceMonth: "2026-09-01",
+    number: 3,
+    installmentsCount: 10,
+    recurringId: null,
+  };
+  const padaria: ExistingOccurrence = {
+    transactionId: "tx-pad",
+    kind: "single",
+    statementDescription: "EST PAD*1 SP",
+    description: "Padaria",
+    amountCents: 1500,
+    purchaseDate: "2026-08-05",
+    referenceMonth: REF,
+    number: 1,
+    installmentsCount: 1,
+    recurringId: null,
+  };
+  const todas = [netflixDoCron, parcelaPropagada, padaria];
+
+  const item = (over: Partial<MatchableItem>): MatchableItem => ({
+    statementDescription: "X",
+    description: "X",
+    amountCents: 100,
+    purchaseDate: "2026-08-01",
+    parcela: null,
+    ...over,
+  });
+
+  it("casa recorrente materializado pelo cron mesmo sem nome bruto, com data e valor diferentes", () => {
+    const m = matchExistingOccurrence(
+      item({
+        statementDescription: "PP*NETFLIX.COM",
+        description: "Netflix",
+        amountCents: 4490, // assinatura reajustou
+        purchaseDate: "2026-08-10", // data impressa != billing_day
+      }),
+      todas,
+      REF,
+    );
+    expect(m?.transactionId).toBe("tx-net");
+  });
+
+  it("casa a parcela pela assinatura, mesmo com o contador e o mês diferentes", () => {
+    const m = matchExistingOccurrence(
+      item({
+        statementDescription: "LOJA X 02/10",
+        description: "Loja X",
+        amountCents: 20000,
+        purchaseDate: "2026-07-11", // a fatura nova pode reimprimir outra data
+        parcela: { atual: 2, total: 10 },
+      }),
+      todas,
+      REF,
+    );
+    expect(m?.transactionId).toBe("tx-loja");
+  });
+
+  it("parcelamento NOVO no mesmo lugar (outro valor/total) não é duplicata", () => {
+    const m = matchExistingOccurrence(
+      item({
+        statementDescription: "LOJA X 01/06",
+        description: "Loja X",
+        amountCents: 15000,
+        purchaseDate: "2026-08-02",
+        parcela: { atual: 1, total: 6 },
+      }),
+      todas,
+      REF,
+    );
+    expect(m).toBeNull();
+  });
+
+  it("casa pela chave exata quando o MESMO PDF é subido de novo", () => {
+    const m = matchExistingOccurrence(
+      item({
+        statementDescription: "EST PAD*1 SP",
+        description: "Padaria",
+        amountCents: 1500,
+        purchaseDate: "2026-08-05",
+      }),
+      todas,
+      REF,
+    );
+    expect(m?.transactionId).toBe("tx-pad");
+  });
+
+  it("chave exata só vale na competência importada", () => {
+    const m = matchExistingOccurrence(
+      item({
+        statementDescription: "EST PAD*1 SP",
+        description: "Padaria",
+        amountCents: 1500,
+        purchaseDate: "2026-08-05",
+      }),
+      todas,
+      "2026-09-01",
+    );
+    expect(m).toBeNull();
+  });
+
+  it("recorrente lançado em OUTRO mês não conta como já importado nesta competência", () => {
+    const m = matchExistingOccurrence(
+      item({ statementDescription: "PP*NETFLIX.COM", description: "Netflix", amountCents: 3990 }),
+      todas,
+      "2026-09-01",
+    );
+    expect(m).toBeNull();
+  });
+
+  it("compra nova no mesmo estabelecimento de um gasto à vista já lançado NÃO é duplicata", () => {
+    const m = matchExistingOccurrence(
+      item({
+        statementDescription: "EST PAD*1 SP",
+        description: "Padaria",
+        amountCents: 2500,
+        purchaseDate: "2026-08-19",
+      }),
+      todas,
+      REF,
+    );
+    expect(m).toBeNull();
+  });
+
+  it("sem nada gravado no cartão, nada casa", () => {
+    expect(matchExistingOccurrence(item({}), [], REF)).toBeNull();
+  });
+});
+
+describe("matchExistingRecurring", () => {
+  const assinaturas: ExistingRecurring[] = [
+    {
+      id: "rec-spot",
+      description: "Assinatura de música", // nome do template não lembra a marca
+      amountCents: 2190,
+      aliases: ["SPOTIFY BR"], // …mas o nome bruto de faturas passadas lembra
+      materialized: false,
+    },
+  ];
+
+  it("casa pelo apelido (nome bruto de faturas anteriores)", () => {
+    const m = matchExistingRecurring(
+      {
+        statementDescription: "SPOTIFY BR SAO PAULO",
+        description: "Spotify",
+        amountCents: 2190,
+        purchaseDate: "2026-08-03",
+        parcela: null,
+      },
+      assinaturas,
+    );
+    expect(m?.id).toBe("rec-spot");
+  });
+
+  it("não casa lançamento sem relação", () => {
+    const m = matchExistingRecurring(
+      {
+        statementDescription: "UBER *TRIP",
+        description: "Uber",
+        amountCents: 2190,
+        purchaseDate: "2026-08-03",
+        parcela: null,
+      },
+      assinaturas,
+    );
+    expect(m).toBeNull();
+  });
+});
+
+describe("resolveInvoiceItem", () => {
+  const spotifyLancado: ExistingOccurrence = {
+    transactionId: "tx-spot",
+    kind: "recurring",
+    statementDescription: null,
+    description: "Assinatura de música", // não lembra a marca impressa na fatura
+    amountCents: 2190,
+    purchaseDate: "2026-08-03",
+    referenceMonth: "2026-08-01",
+    number: 1,
+    installmentsCount: 1,
+    recurringId: "rec-spot",
+  };
+  const template = (materialized: boolean): ExistingRecurring => ({
+    id: "rec-spot",
+    description: "Assinatura de música",
+    amountCents: 2190,
+    aliases: ["SPOTIFY BR"],
+    materialized,
+  });
+  const linha: MatchableItem = {
+    statementDescription: "SPOTIFY BR",
+    description: "Spotify",
+    amountCents: 2190,
+    purchaseDate: "2026-08-05",
+    parcela: null,
+  };
+
+  it("assinatura JÁ lançada no mês vira 'já importado', mesmo casando só pelo apelido", () => {
+    const r = resolveInvoiceItem(linha, [spotifyLancado], [template(true)], "2026-08-01");
+    expect(r.match?.transactionId).toBe("tx-spot");
+  });
+
+  it("assinatura cadastrada mas ainda não lançada é item novo vinculado ao template", () => {
+    const r = resolveInvoiceItem(linha, [], [template(false)], "2026-08-01");
+    expect(r.match).toBeNull();
+    expect(r.recurring?.id).toBe("rec-spot");
+  });
+
+  it("lançamento sem relação nenhuma fica novo e solto", () => {
+    const r = resolveInvoiceItem(
+      { ...linha, statementDescription: "PADARIA", description: "Padaria" },
+      [spotifyLancado],
+      [template(true)],
+      "2026-08-01",
+    );
+    expect(r).toEqual({ match: null, recurring: null });
+  });
+});
+
+describe("classifyReviewItem", () => {
+  const occ = (over: Partial<ExistingOccurrence>): ExistingOccurrence => ({
+    transactionId: "tx",
+    kind: "single",
+    statementDescription: null,
+    description: "X",
+    amountCents: 100,
+    purchaseDate: "2026-08-01",
+    referenceMonth: "2026-08-01",
+    number: 1,
+    installmentsCount: 1,
+    recurringId: null,
+    ...over,
+  });
+
+  it("separa novos por natureza do gasto", () => {
+    expect(classifyReviewItem({ match: null, parcela: null })).toBe("new-single");
+    expect(classifyReviewItem({ match: null, parcela: { atual: 1, total: 4 } })).toBe(
+      "new-installment",
+    );
+    expect(classifyReviewItem({ match: null, parcela: null, markAsRecurring: true })).toBe(
+      "new-recurring",
+    );
+  });
+
+  it("item vinculado a assinatura existente é recorrente, mesmo com parcela detectada", () => {
+    expect(
+      classifyReviewItem({
+        match: null,
+        parcela: { atual: 2, total: 12 },
+        linkedRecurringId: "rec-net",
+      }),
+    ).toBe("new-recurring");
+  });
+
+  it("já importado herda a natureza da ocorrência gravada", () => {
+    expect(classifyReviewItem({ match: occ({}), parcela: null })).toBe("existing-single");
+    expect(
+      classifyReviewItem({ match: occ({ installmentsCount: 10, number: 2 }), parcela: null }),
+    ).toBe("existing-installment");
+    expect(classifyReviewItem({ match: occ({ recurringId: "rec-net" }), parcela: null })).toBe(
+      "existing-recurring",
+    );
+  });
+
+  it("já importado vence a marcação de recorrente feita agora", () => {
+    expect(
+      classifyReviewItem({ match: occ({}), parcela: null, markAsRecurring: true }),
+    ).toBe("existing-single");
   });
 });
 

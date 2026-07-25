@@ -92,6 +92,12 @@ export const importItemInputSchema = z.object({
     .optional(),
   /** Quando true, cria um RecurringExpense além da transação normal. */
   mark_as_recurring: z.boolean().optional(),
+  /**
+   * Assinatura JÁ cadastrada à qual este lançamento pertence (casada na revisão).
+   * Tem prioridade sobre `mark_as_recurring`: a transação nasce ligada a este
+   * template, sem criar uma assinatura duplicada.
+   */
+  recurring_id: z.string().uuid().nullable().optional(),
 });
 export type ImportItemInput = z.infer<typeof importItemInputSchema>;
 
@@ -188,6 +194,213 @@ export function installmentSignature(
     statementDescription.replace(INSTALLMENT_TOKEN, " ").replace(/\s+/g, " "),
   );
   return `${merchant}|${parcelAmountCents}|${totalInstallments}`;
+}
+
+// ── Casamento com o que já existe no cartão ─────────────────────────────────
+
+/**
+ * Uma ocorrência JÁ gravada no cartão (parcela ativa + sua transação). Vem do
+ * banco pelo `getExistingInvoiceContext` e cobre TODOS os meses do cartão — as
+ * parcelas futuras de um parcelamento já foram materializadas em competências
+ * seguintes, então limitar à competência importada não as enxergaria.
+ */
+export interface ExistingOccurrence {
+  transactionId: string;
+  kind: "single" | "installment" | "recurring";
+  /** Nome bruto da fatura. `null` em lançamento manual ou materializado pelo cron. */
+  statementDescription: string | null;
+  description: string;
+  amountCents: number;
+  purchaseDate: string;
+  /** Competência em que esta parcela está lançada (`YYYY-MM-01`). */
+  referenceMonth: string;
+  /** Nº da parcela dentro do parcelamento. */
+  number: number;
+  installmentsCount: number;
+  recurringId: string | null;
+}
+
+/**
+ * Assinatura ativa do cartão vigente na competência, com os apelidos que ela já
+ * teve em faturas anteriores (`statement_description` das transações ligadas a
+ * ela) — é o que permite casar "PP*NETFLIX.COM" com o template "Netflix".
+ */
+export interface ExistingRecurring {
+  id: string;
+  description: string;
+  amountCents: number;
+  aliases: string[];
+  /** Já tem ocorrência lançada nesta competência? */
+  materialized: boolean;
+}
+
+/** O mínimo de um item da revisão para decidir se ele já existe. */
+export interface MatchableItem {
+  statementDescription: string;
+  description: string;
+  amountCents: number;
+  purchaseDate: string;
+  parcela: { atual: number; total: number } | null;
+}
+
+/** Tamanho mínimo de um nome para valer como sinal (evita casar "PA" com tudo). */
+const MIN_NAME_LEN = 3;
+
+/**
+ * Dois nomes se referem ao mesmo estabelecimento? Iguais depois de normalizar,
+ * ou um contido no outro (mesmo espírito do palpite por emissor na revisão) —
+ * cobre "Netflix" ⊂ "NETFLIX.COM BR" sem exigir grafia idêntica.
+ */
+function namesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = normalizeText(a ?? "");
+  const y = normalizeText(b ?? "");
+  if (x.length < MIN_NAME_LEN || y.length < MIN_NAME_LEN) return false;
+  return x === y || x.includes(y) || y.includes(x);
+}
+
+/**
+ * Acha a ocorrência já gravada que corresponde a um lançamento da fatura.
+ * Em ordem de confiança:
+ *
+ * 1. **chave exata** (nome bruto + valor + data), NA competência importada —
+ *    reimport do MESMO PDF;
+ * 2. **parcelado** — mesma `installmentSignature` (nome sem contador + valor da
+ *    parcela + total) em QUALQUER mês do cartão: ao subir a fatura seguinte, as
+ *    parcelas futuras já foram materializadas em competências posteriores;
+ * 3. **recorrente** — ocorrência da competência ligada a uma assinatura cujo nome
+ *    bate. Valor e data NÃO entram: assinatura reajusta, e a data materializada
+ *    pelo cron é o `billing_day`, não a data impressa na fatura.
+ */
+export function matchExistingOccurrence(
+  item: MatchableItem,
+  occurrences: ExistingOccurrence[],
+  referenceMonth: string,
+): ExistingOccurrence | null {
+  const key = dedupeKey(item.statementDescription, item.amountCents, item.purchaseDate);
+  const exact = occurrences.find(
+    (o) =>
+      o.referenceMonth === referenceMonth &&
+      o.statementDescription != null &&
+      dedupeKey(o.statementDescription, o.amountCents, o.purchaseDate) === key,
+  );
+  if (exact) return exact;
+
+  const p = item.parcela;
+  if (p && p.total >= 2) {
+    const signature = installmentSignature(
+      item.statementDescription,
+      item.amountCents,
+      p.total,
+    );
+    const parcel = occurrences.find(
+      (o) =>
+        o.installmentsCount >= 2 &&
+        o.statementDescription != null &&
+        installmentSignature(o.statementDescription, o.amountCents, o.installmentsCount) ===
+          signature,
+    );
+    if (parcel) return parcel;
+  }
+
+  return (
+    occurrences.find(
+      (o) =>
+        o.recurringId != null &&
+        o.referenceMonth === referenceMonth &&
+        (namesMatch(item.description, o.description) ||
+          namesMatch(item.statementDescription, o.description) ||
+          namesMatch(item.statementDescription, o.statementDescription) ||
+          namesMatch(item.description, o.statementDescription)),
+    ) ?? null
+  );
+}
+
+/**
+ * Acha a assinatura JÁ cadastrada correspondente ao lançamento (mesmo que ela
+ * ainda não tenha ocorrência na competência). Serve para importar o item
+ * vinculado ao template existente em vez de criar uma assinatura duplicada.
+ */
+export function matchExistingRecurring(
+  item: MatchableItem,
+  recurrings: ExistingRecurring[],
+): ExistingRecurring | null {
+  return (
+    recurrings.find(
+      (r) =>
+        namesMatch(item.description, r.description) ||
+        namesMatch(item.statementDescription, r.description) ||
+        r.aliases.some(
+          (a) => namesMatch(item.statementDescription, a) || namesMatch(item.description, a),
+        ),
+    ) ?? null
+  );
+}
+
+/**
+ * Resolve um lançamento da fatura contra o que já existe na competência — é o
+ * ponto único que a revisão usa:
+ *
+ * - `match` ≠ null → a ocorrência já está lançada (item vai para "Já importados");
+ * - `recurring` ≠ null com `match` null → pertence a uma assinatura cadastrada que
+ *   ainda NÃO foi lançada no mês; importa vinculado a ela, sem criar template novo.
+ *
+ * O segundo passo cobre o caso em que só o apelido casa: se a assinatura já está
+ * materializada no mês, a ocorrência dela é o match (senão o item entraria como
+ * novo e duplicaria a cobrança).
+ */
+export function resolveInvoiceItem(
+  item: MatchableItem,
+  occurrences: ExistingOccurrence[],
+  recurrings: ExistingRecurring[],
+  referenceMonth: string,
+): { match: ExistingOccurrence | null; recurring: ExistingRecurring | null } {
+  const direct = matchExistingOccurrence(item, occurrences, referenceMonth);
+  if (direct) return { match: direct, recurring: null };
+
+  const recurring = matchExistingRecurring(item, recurrings);
+  if (recurring?.materialized) {
+    const occ =
+      occurrences.find(
+        (o) => o.recurringId === recurring.id && o.referenceMonth === referenceMonth,
+      ) ?? null;
+    if (occ) return { match: occ, recurring };
+  }
+  return { match: null, recurring };
+}
+
+// ── Agrupamento da tela de revisão ──────────────────────────────────────────
+
+/**
+ * Grupo de um item na revisão: "novo" (vai ser gravado) ou "já importado" (a
+ * competência já tem essa ocorrência), subdividido por natureza do gasto.
+ */
+export type ReviewGroupKey =
+  | "new-installment"
+  | "new-single"
+  | "new-recurring"
+  | "existing-installment"
+  | "existing-single"
+  | "existing-recurring";
+
+/**
+ * Decide o grupo de um item da revisão. Já importado herda a natureza da
+ * ocorrência gravada; novo é recorrente quando o usuário marcou (ou quando o
+ * item foi vinculado a uma assinatura existente), senão parcelado/à vista.
+ * Recorrência vence parcela — assinatura não é parcelamento (mesma regra de
+ * `buildImportRows`).
+ */
+export function classifyReviewItem(item: {
+  match: ExistingOccurrence | null;
+  linkedRecurringId?: string | null;
+  markAsRecurring?: boolean;
+  parcela: { atual: number; total: number } | null;
+}): ReviewGroupKey {
+  if (item.match) {
+    if (item.match.recurringId) return "existing-recurring";
+    return item.match.installmentsCount > 1 ? "existing-installment" : "existing-single";
+  }
+  if (item.markAsRecurring || item.linkedRecurringId) return "new-recurring";
+  return item.parcela ? "new-installment" : "new-single";
 }
 
 /** Sinônimos comuns → nome canônico (normalizado) das categorias semeadas. */

@@ -7,9 +7,9 @@ import { parseBRLToCents } from "@/lib/money";
 import { shiftReferenceMonth } from "@/lib/date";
 import {
   buildImportRows,
-  dedupeKey,
   importPayloadSchema,
-  installmentSignature,
+  type ExistingOccurrence,
+  type ExistingRecurring,
   type ValidatedImportItem,
 } from "@/lib/invoice-import";
 
@@ -47,8 +47,15 @@ export async function importarGastosDaFatura(
   const { data: cats } = await supabase.from("categories").select("id");
   const ownCategories = new Set((cats ?? []).map((c) => c.id));
 
+  // Assinaturas do usuário — mesmo cuidado para o vínculo com template existente.
+  const { data: recs } = await supabase.from("recurring_expenses").select("id");
+  const ownRecurrings = new Set((recs ?? []).map((r) => r.id));
+
   // Converte valores (money.ts é o ponto único) e monta os itens validados.
   const validated: ValidatedImportItem[] = [];
+  // Ids das assinaturas CRIADAS agora (as vinculadas a template existente ficam
+  // de fora — senão o insert abaixo duplicaria a assinatura).
+  const newRecurringIds = new Set<string>();
   for (const it of items) {
     const amountCents = parseBRLToCents(it.valor_brl);
     if (amountCents == null || amountCents <= 0) {
@@ -57,7 +64,12 @@ export async function importarGastosDaFatura(
     const categoryId = it.category_id && ownCategories.has(it.category_id) ? it.category_id : null;
     // Item marcado como recorrente vira um template (recurring_expense) + transação
     // `recurring` na própria fatura. Assinatura não é parcela → ignora `parcela`.
-    const recurringId = it.mark_as_recurring ? randomUUID() : null;
+    // Se a revisão casou o item com uma assinatura JÁ cadastrada, reaproveita esse
+    // template (nada de duplicar); só id do próprio usuário é aceito.
+    const linkedId =
+      it.recurring_id && ownRecurrings.has(it.recurring_id) ? it.recurring_id : null;
+    const recurringId = linkedId ?? (it.mark_as_recurring ? randomUUID() : null);
+    if (recurringId && !linkedId) newRecurringIds.add(recurringId);
     // Só vira parcela se os números fizerem sentido (2+ parcelas, atual no intervalo).
     const p = it.parcela;
     const installment =
@@ -90,7 +102,7 @@ export async function importarGastosDaFatura(
   // corrente (criada aqui como `recurring`); o cron materializa daí em diante,
   // sem risco de duplicar a competência importada.
   const recurringRows = validated
-    .filter((v) => v.recurringId)
+    .filter((v) => v.recurringId && newRecurringIds.has(v.recurringId))
     .map((v) => ({
       id: v.recurringId as string,
       user_id: user.id,
@@ -143,23 +155,25 @@ export async function importarGastosDaFatura(
 }
 
 /**
- * Chaves de deduplicação dos lançamentos já existentes num cartão, para a tela de
- * revisão marcar linhas já importadas antes de gravar. Duas famílias:
+ * O que o cartão JÁ tem, para a revisão saber o que é novo. Duas partes:
  *
- * - `exactKeys`: itens À VISTA já importados NESTA competência (nome+valor+data).
- *   Mês único basta — um gasto à vista não se espalha por outros meses.
- * - `installmentSignatures`: assinaturas de compras PARCELADAS em QUALQUER mês do
- *   cartão. É o que evita a duplicação ao subir a fatura do mês seguinte: as
- *   parcelas futuras já foram materializadas em uploads anteriores, então a
- *   mesma compra reaparece num mês onde já existe parcela. A comparação por
- *   nome+valor+data no mês não pega isso (o contador de parcela muda no nome, a
- *   parcela vive em outro mês, a data pode variar) — a assinatura, sim.
+ * - `occurrences`: cada parcela viva do cartão (TODOS os meses) com os dados da
+ *   sua transação. É o cartão inteiro, e não só a competência, porque as parcelas
+ *   futuras de um parcelamento já foram materializadas em competências seguintes
+ *   — sem isso, subir a fatura do mês seguinte recriaria a cadeia toda.
+ * - `recurrings`: as assinaturas ativas do cartão vigentes na competência, com os
+ *   apelidos que já apareceram em faturas (para casar o nome bruto do PDF) e se
+ *   já estão lançadas no mês.
+ *
+ * Substitui a lista de chaves de dedupe antiga, que descartava tudo sem
+ * `statement_description` — e era por isso que os recorrentes materializados pelo
+ * cron voltavam como novos a cada fatura importada.
  */
-export async function getExistingInvoiceKeys(
+export async function getExistingInvoiceContext(
   cardId: string,
   referenceMonth: string,
-): Promise<{ exactKeys: string[]; installmentSignatures: string[] }> {
-  const empty = { exactKeys: [], installmentSignatures: [] };
+): Promise<{ occurrences: ExistingOccurrence[]; recurrings: ExistingRecurring[] }> {
+  const empty = { occurrences: [], recurrings: [] };
   if (!/^[0-9a-f-]{36}$/i.test(cardId) || !/^\d{4}-\d{2}-01$/.test(referenceMonth)) return empty;
 
   const supabase = await createClient();
@@ -168,37 +182,83 @@ export async function getExistingInvoiceKeys(
   } = await supabase.auth.getUser();
   if (!user) return empty;
 
-  // Parcelas vivas do cartão inteiro (todos os meses) — cobre à vista (filtrado
-  // por mês abaixo) e parceladas (assinatura no cartão todo) num só round-trip.
-  const { data: installments } = await supabase
-    .from("installments")
-    .select("amount_cents, transaction_id, reference_month")
-    .eq("card_id", cardId)
-    .is("deleted_at", null);
+  // Parcelas vivas do cartão inteiro + assinaturas vigentes na competência.
+  const [{ data: installments }, { data: templates }] = await Promise.all([
+    supabase
+      .from("installments")
+      .select("amount_cents, number, transaction_id, reference_month")
+      .eq("card_id", cardId)
+      .is("deleted_at", null),
+    supabase
+      .from("recurring_expenses")
+      .select("id, description, amount_cents")
+      .eq("card_id", cardId)
+      .eq("active", true)
+      .lte("start_month", referenceMonth)
+      .or(`end_month.is.null,end_month.gte.${referenceMonth}`),
+  ]);
 
-  if (!installments?.length) return empty;
-
-  const txIds = [...new Set(installments.map((i) => i.transaction_id))];
-  const { data: txs } = await supabase
-    .from("transactions")
-    .select("id, statement_description, purchase_date, installments_count")
-    .in("id", txIds);
+  const txIds = [...new Set((installments ?? []).map((i) => i.transaction_id))];
+  const { data: txs } = txIds.length
+    ? await supabase
+        .from("transactions")
+        .select("id, description, statement_description, purchase_date, kind, installments_count, recurring_id")
+        .in("id", txIds)
+    : { data: [] };
   const txById = new Map((txs ?? []).map((t) => [t.id, t]));
 
-  const exactKeys: string[] = [];
-  const installmentSignatures: string[] = [];
-  for (const it of installments) {
-    const tx = txById.get(it.transaction_id);
-    if (!tx?.statement_description) continue; // só o que veio de import tem nome bruto
-    if ((tx.installments_count ?? 1) >= 2) {
-      // Compra parcelada: assinatura estável, válida para qualquer mês.
-      installmentSignatures.push(
-        installmentSignature(tx.statement_description, it.amount_cents, tx.installments_count),
-      );
-    } else if (it.reference_month === referenceMonth) {
-      // À vista: só interessa a duplicata na própria competência.
-      exactKeys.push(dedupeKey(tx.statement_description, it.amount_cents, tx.purchase_date));
-    }
+  const occurrences: ExistingOccurrence[] = [];
+  for (const inst of installments ?? []) {
+    const tx = txById.get(inst.transaction_id);
+    if (!tx) continue;
+    occurrences.push({
+      transactionId: tx.id,
+      kind: tx.kind,
+      statementDescription: tx.statement_description,
+      description: tx.description,
+      amountCents: inst.amount_cents,
+      purchaseDate: tx.purchase_date,
+      referenceMonth: inst.reference_month,
+      number: inst.number,
+      installmentsCount: tx.installments_count,
+      recurringId: tx.recurring_id,
+    });
   }
-  return { exactKeys, installmentSignatures };
+
+  const templateIds = (templates ?? []).map((t) => t.id);
+  // Apelidos: o nome BRUTO com que a assinatura já apareceu em faturas passadas —
+  // sinal muito mais forte que o nome amigável do template.
+  const { data: aliasRows } = templateIds.length
+    ? await supabase
+        .from("transactions")
+        .select("recurring_id, statement_description")
+        .in("recurring_id", templateIds)
+        .not("statement_description", "is", null)
+    : { data: [] };
+
+  const aliasesById = new Map<string, Set<string>>();
+  for (const row of aliasRows ?? []) {
+    if (!row.recurring_id || !row.statement_description) continue;
+    const set = aliasesById.get(row.recurring_id) ?? new Set<string>();
+    set.add(row.statement_description);
+    aliasesById.set(row.recurring_id, set);
+  }
+
+  // Materializada = tem ocorrência NA COMPETÊNCIA importada (não em outro mês).
+  const materializedIds = new Set(
+    occurrences
+      .filter((o) => o.referenceMonth === referenceMonth)
+      .map((o) => o.recurringId)
+      .filter((id): id is string => id != null),
+  );
+
+  const recurrings: ExistingRecurring[] = (templates ?? []).map((t) => ({
+    id: t.id,
+    description: t.description,
+    amountCents: t.amount_cents,
+    aliases: [...(aliasesById.get(t.id) ?? [])],
+    materialized: materializedIds.has(t.id),
+  }));
+
+  return { occurrences, recurrings };
 }
