@@ -29,6 +29,8 @@ export async function signUp(_prev: unknown, formData: FormData) {
   const password = String(formData.get("password"));
   const displayName = String(formData.get("display_name") ?? "");
 
+  if (password.length < 6) return { error: "A senha deve ter ao menos 6 caracteres." };
+
   const supabase = await createClient();
   const { error } = await supabase.auth.signUp({
     email,
@@ -38,7 +40,13 @@ export async function signUp(_prev: unknown, formData: FormData) {
     options: { data: { display_name: displayName, onboarding_pending: true } },
   });
 
-  if (error) return { error: error.message };
+  // Mensagem genérica de propósito: devolver o erro cru do Supabase ("User
+  // already registered") permitiria descobrir quais e-mails têm conta. O detalhe
+  // fica no log do servidor.
+  if (error) {
+    console.error("[signup] falha:", error.status);
+    return { error: "Não foi possível criar a conta. Verifique os dados e tente novamente." };
+  }
   redirect("/onboarding");
 }
 

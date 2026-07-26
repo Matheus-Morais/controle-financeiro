@@ -52,16 +52,28 @@ export async function createAccount(_prev: CreateState, formData: FormData): Pro
 export async function updateAccount(
   id: string,
   patch: { name?: string; type?: AccountType; color?: string },
-): Promise<void> {
+): Promise<{ error?: string }> {
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado." };
+
   const update: { name?: string; type?: AccountType; color?: string } = {};
   if (patch.name !== undefined && patch.name.trim().length > 0) update.name = patch.name.trim();
   if (patch.type !== undefined) update.type = patch.type;
   if (patch.color !== undefined) update.color = patch.color;
-  if (Object.keys(update).length === 0) return;
+  if (Object.keys(update).length === 0) return {};
 
-  await supabase.from("accounts").update(update).eq("id", id);
+  const { error } = await supabase
+    .from("accounts")
+    .update(update)
+    .eq("id", id)
+    .eq("user_id", user.id);
+  if (error) return { error: error.message };
+
   revalidate();
+  return {};
 }
 
 /**

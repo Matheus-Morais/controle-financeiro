@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { currentReferenceMonth, formatMonthLabel } from "@/lib/date";
+import { sessionTimezone } from "@/lib/user-time";
 import { spendingByCategory } from "@/lib/reports";
 import { formatCents } from "@/lib/money";
 import { BudgetRow } from "@/components/budget-row";
@@ -9,7 +10,7 @@ import { createCategory, deleteCategory } from "./actions";
 
 export default async function OrcamentoPage() {
   const supabase = await createClient();
-  const refMonth = currentReferenceMonth();
+  const refMonth = currentReferenceMonth(await sessionTimezone(supabase));
 
   const [{ data: categories }, { data: budgets }, spending] = await Promise.all([
     supabase.from("categories").select("id, name, color").order("name"),

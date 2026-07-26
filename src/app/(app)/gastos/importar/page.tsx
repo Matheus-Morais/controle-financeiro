@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { currentReferenceMonth } from "@/lib/date";
+import { sessionTimezone } from "@/lib/user-time";
 import { ImportInvoice } from "@/components/import-invoice";
 
 // A revisão dispara a gravação; a extração é na rota /api/faturas/importar.
@@ -43,7 +44,7 @@ export default async function ImportarFaturaPage({
         <ImportInvoice
           cards={cards ?? []}
           categories={categories ?? []}
-          currentMonth={currentReferenceMonth()}
+          currentMonth={currentReferenceMonth(await sessionTimezone(supabase))}
           initialCardId={fromCard}
         />
       ) : (

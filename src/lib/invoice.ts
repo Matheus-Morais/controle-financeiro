@@ -14,6 +14,13 @@ export interface CardCycle {
   dueDay: number;
 }
 
+/**
+ * Fechamento fictício das origens sem fatura (carteira, PIX, conta): o dia 31
+ * faz a competência coincidir sempre com o mês da compra. Ponto único da
+ * constante — antes estava duplicada em três arquivos.
+ */
+export const ACCOUNT_CLOSING_DAY = 31;
+
 export interface InvoiceRef {
   /** Primeiro dia do mês de competência (`YYYY-MM-01`). Chave da fatura. */
   referenceMonth: string;

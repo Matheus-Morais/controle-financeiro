@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight, FileUp } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { todayISO } from "@/lib/date";
+import { sessionTimezone } from "@/lib/user-time";
 import { ExpenseForm } from "@/components/expense-form";
 import { createExpense } from "./actions";
 
@@ -15,6 +16,7 @@ export default async function NovoGastoPage() {
   ]);
 
   const hasSource = (cards?.length ?? 0) + (accounts?.length ?? 0) > 0;
+  const today = todayISO(await sessionTimezone(supabase));
 
   return (
     <div className="flex flex-col gap-4">
@@ -42,7 +44,7 @@ export default async function NovoGastoPage() {
           cards={cards ?? []}
           accounts={accounts ?? []}
           categories={categories ?? []}
-          today={todayISO()}
+          today={today}
         />
       ) : (
         <Link

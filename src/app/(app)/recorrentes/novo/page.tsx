@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { todayISO } from "@/lib/date";
+import { sessionTimezone } from "@/lib/user-time";
 import { RecurringForm } from "@/components/recurring-form";
 import { createRecurring } from "../actions";
 
@@ -14,7 +15,7 @@ export default async function NovaRecorrentePage() {
   ]);
 
   const hasSource = (cards?.length ?? 0) + (accounts?.length ?? 0) > 0;
-  const currentMonth = todayISO().slice(0, 7); // YYYY-MM
+  const currentMonth = todayISO(await sessionTimezone(supabase)).slice(0, 7); // YYYY-MM
 
   return (
     <div className="flex flex-col gap-4">

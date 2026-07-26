@@ -118,33 +118,18 @@ export async function importarGastosDaFatura(
       active: true,
     }));
 
-  if (recurringRows.length > 0) {
-    const { error: recErr } = await supabase.from("recurring_expenses").insert(recurringRows);
-    if (recErr) {
-      console.error("[importar] erro ao gravar recorrentes:", recErr.code);
-      return { error: "Erro ao salvar os lançamentos. Tente novamente." };
-    }
-  }
-
-  // Gravação em lote (não atômica; ver limitação no plano). Ids pré-gerados
-  // ligam parcela↔transação sem depender da ordem de retorno do insert.
-  const { error: txErr } = await supabase.from("transactions").insert(rows.transactions);
-  if (txErr) {
-    console.error("[importar] erro ao gravar transações:", txErr.code);
-    return { error: "Erro ao salvar os lançamentos. Tente novamente." };
-  }
-
-  const { error: instErr } = await supabase.from("installments").insert(rows.installments);
-  if (instErr) {
-    console.error("[importar] erro ao gravar parcelas:", instErr.code);
-    return { error: "Erro ao salvar os lançamentos. Tente novamente." };
-  }
-
-  const { error: invErr } = await supabase
-    .from("invoices")
-    .upsert(rows.invoices, { onConflict: "card_id,reference_month", ignoreDuplicates: true });
-  if (invErr) {
-    console.error("[importar] erro ao upsert fatura:", invErr.code);
+  // Gravação em lote ATÔMICA: os quatro inserts (assinaturas → transações →
+  // parcelas → capas de fatura) rodam numa única transação no Postgres. Antes
+  // eram quatro chamadas independentes, e uma falha no meio deixava dezenas de
+  // transações órfãs — sem parcelas, invisíveis nas faturas e nos relatórios.
+  const { error: writeErr } = await supabase.rpc("import_invoice_atomic", {
+    p_recurrings: recurringRows,
+    p_transactions: rows.transactions,
+    p_installments: rows.installments,
+    p_invoices: rows.invoices,
+  });
+  if (writeErr) {
+    console.error("[importar] erro ao gravar o lote:", writeErr.code);
     return { error: "Erro ao salvar os lançamentos. Tente novamente." };
   }
 

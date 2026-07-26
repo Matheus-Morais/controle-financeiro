@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Plus, Receipt } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { currentReferenceMonth, formatDayMonth, shiftReferenceMonth, todayISO } from "@/lib/date";
+import { sessionTimezone } from "@/lib/user-time";
 import { formatCents } from "@/lib/money";
 import { materializeRecurringExpenses } from "@/lib/recurring";
 import { MonthNav } from "@/components/month-nav";
@@ -18,7 +19,10 @@ export default async function ContasPage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  const refMonth = mes ?? currentReferenceMonth();
+  // Calendário no timezone DO USUÁRIO (RN-08) — com o default do servidor, na
+  // virada do mês esta tela mostraria um mês e o dashboard, outro.
+  const tz = await sessionTimezone(supabase);
+  const refMonth = mes ?? currentReferenceMonth(tz);
 
   // Contas fixas recorrentes são propagadas a todos os meses: materializa
   // (idempotente) o mês exibido antes de ler, para aparecerem mesmo em meses
@@ -64,7 +68,7 @@ export default async function ContasPage({
   const total = items.reduce((s, i) => s + i.amountCents, 0);
   const paid = items.filter((i) => i.paid).reduce((s, i) => s + i.amountCents, 0);
   const open = total - paid;
-  const today = todayISO();
+  const today = todayISO(tz);
 
   return (
     <div className="flex flex-col gap-4">

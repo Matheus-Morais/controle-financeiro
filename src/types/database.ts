@@ -17,6 +17,9 @@ export type NotificationType = "monthly" | "weekly" | "bills";
 
 type Timestamps = { created_at: string };
 
+/** Payload jsonb aceito pelas funções RPC. */
+export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
+
 export type Profile = {
   user_id: string;
   display_name: string | null;
@@ -129,6 +132,8 @@ export type Income = Timestamps & {
   recurring_day: number | null;
   recurring_mode: "day_of_month" | "nth_business_day";
   recurring_business_day: number | null;
+  /** Última competência em que a renda se repete; null = sem fim. */
+  recurring_end_month: string | null;
 };
 
 export type Budget = Timestamps & {
@@ -154,6 +159,12 @@ export type NotificationLog = {
   type: NotificationType;
   sent_for: string;
   sent_at: string;
+};
+
+/** Uma linha por importação de fatura — base da quota do endpoint de IA. */
+export type InvoiceImportLog = Timestamps & {
+  id: string;
+  user_id: string;
 };
 
 /**
@@ -182,12 +193,39 @@ export type Database = {
       budgets: Table<Budget>;
       push_subscriptions: Table<PushSubscriptionRow>;
       notification_log: Table<NotificationLog>;
+      invoice_import_log: Table<InvoiceImportLog>;
     };
     Views: { [_ in never]: never };
     Functions: {
       reset_account_data: {
         Args: Record<PropertyKey, never>;
         Returns: void;
+      };
+      /** Lança um gasto (transação + parcelas + faturas) numa única transação. */
+      create_expense_atomic: {
+        Args: { p_transaction: Json; p_installments: Json; p_invoices: Json };
+        /** Id da transação criada. */
+        Returns: string;
+      };
+      /** Regenera um gasto atomicamente; devolve as competências pagas descartadas. */
+      update_expense_atomic: {
+        Args: {
+          p_transaction_id: string;
+          p_transaction: Json;
+          p_installments: Json;
+          p_invoices: Json;
+        };
+        Returns: number;
+      };
+      /** Grava o lote de uma fatura importada; devolve quantas transações entraram. */
+      import_invoice_atomic: {
+        Args: {
+          p_recurrings: Json;
+          p_transactions: Json;
+          p_installments: Json;
+          p_invoices: Json;
+        };
+        Returns: number;
       };
     };
     Enums: {

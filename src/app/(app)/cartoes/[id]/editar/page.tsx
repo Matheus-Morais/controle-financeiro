@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { CardForm } from "@/components/card-form";
+import { DeleteCardButton } from "@/components/delete-card-button";
 import { deleteCard, updateCard } from "../../actions";
 
 export default async function EditarCartaoPage({ params }: { params: Promise<{ id: string }> }) {
@@ -25,14 +26,7 @@ export default async function EditarCartaoPage({ params }: { params: Promise<{ i
 
       <CardForm action={updateWithId} card={card} />
 
-      <form action={deleteWithId}>
-        <button
-          type="submit"
-          className="w-full rounded-xl border border-red-300 py-3 text-sm font-medium text-red-600 dark:border-red-900"
-        >
-          Excluir cartão
-        </button>
-      </form>
+      <DeleteCardButton onDelete={deleteWithId} />
     </div>
   );
 }

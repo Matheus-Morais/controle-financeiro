@@ -28,8 +28,18 @@ export function BudgetRow({
   function commit() {
     const cents = parseBRLToCents(limit) ?? 0;
     if (cents === savedLimit) return;
+    const previous = savedLimit;
     setSavedLimit(cents);
-    startTransition(() => saveBudget(categoryId, cents));
+    startTransition(async () => {
+      const res = await saveBudget(categoryId, cents);
+      // Falhou: desfaz a atualização otimista em vez de mostrar uma meta que
+      // não foi salva.
+      if (res?.error) {
+        setSavedLimit(previous);
+        setLimit(previous > 0 ? String(previous / 100).replace(".", ",") : "");
+        alert(res.error);
+      }
+    });
   }
 
   return (

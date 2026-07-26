@@ -3,6 +3,7 @@ import { Plus, Repeat } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { formatCents } from "@/lib/money";
 import { currentReferenceMonth, formatMonthLabel } from "@/lib/date";
+import { sessionTimezone } from "@/lib/user-time";
 import { DeleteButton } from "@/components/delete-button";
 import { RecurringToggle } from "@/components/recurring-toggle";
 import { ChangeCardModal } from "@/components/change-card-modal";
@@ -28,7 +29,7 @@ export default async function RecorrentesPage() {
   const activeCards = (cards ?? [])
     .filter((c) => c.active)
     .map((c) => ({ id: c.id, name: c.name }));
-  const monthLabel = formatMonthLabel(currentReferenceMonth());
+  const monthLabel = formatMonthLabel(currentReferenceMonth(await sessionTimezone(supabase)));
 
   const activeTotal = (recurrings ?? [])
     .filter((r) => r.active)
