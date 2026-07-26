@@ -44,5 +44,6 @@ supabase/.temp
 # typescript build cache (regenerado a cada build; não versionar)
 *.tsbuildinfo
 
-# claude code (instruções locais)
+# claude code (instruções locais + worktrees, que carregam node_modules próprio)
 CLAUDE.md
+.claude/

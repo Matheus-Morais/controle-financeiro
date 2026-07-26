@@ -5,6 +5,7 @@ import { Trash2 } from "lucide-react";
 import { AddCategoryForm } from "@/components/add-category-form";
 
 type FormActionState = { error?: string; ok?: boolean } | undefined;
+type ActionResult = { error?: string };
 type CreateActionState = { error?: string; ok?: boolean; category?: ManagedCategory } | undefined;
 type CreateAction = (prev: CreateActionState, formData: FormData) => Promise<CreateActionState>;
 
@@ -86,24 +87,39 @@ export function CategoryManager({
   categories: ManagedCategory[];
   onCategoriesChange?: (categories: ManagedCategory[]) => void;
   createAction: CreateAction;
-  updateAction: (id: string, patch: { name?: string; color?: string }) => Promise<void>;
-  deleteAction: (id: string) => Promise<void>;
+  updateAction: (id: string, patch: { name?: string; color?: string }) => Promise<ActionResult>;
+  deleteAction: (id: string) => Promise<ActionResult>;
 }) {
   const [items, setItems] = useState(categories);
+  const [error, setError] = useState<string | undefined>();
 
   function update(next: ManagedCategory[]) {
     setItems(next);
     onCategoriesChange?.(next);
   }
 
-  function handleUpdate(id: string, patch: { name?: string; color?: string }) {
+  // As duas ações atualizam a lista de forma otimista; se o servidor recusar,
+  // restaura o estado anterior em vez de deixar a UI mentindo.
+  async function handleUpdate(id: string, patch: { name?: string; color?: string }) {
+    const previous = items;
+    setError(undefined);
     update(items.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-    updateAction(id, patch);
+    const res = await updateAction(id, patch);
+    if (res?.error) {
+      update(previous);
+      setError(res.error);
+    }
   }
 
-  function handleDelete(id: string) {
+  async function handleDelete(id: string) {
+    const previous = items;
+    setError(undefined);
     update(items.filter((c) => c.id !== id));
-    deleteAction(id);
+    const res = await deleteAction(id);
+    if (res?.error) {
+      update(previous);
+      setError(res.error);
+    }
   }
 
   return (
@@ -118,6 +134,8 @@ export function CategoryManager({
           </p>
         )}
       </div>
+
+      {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="border-t border-neutral-100 pt-4 dark:border-neutral-800">
         <p className="mb-2 text-sm font-medium">Nova categoria</p>

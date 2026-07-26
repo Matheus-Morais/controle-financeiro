@@ -1,12 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import { invoiceRefForMonth, clampDay, toISO, ymd } from "./invoice";
+import { ACCOUNT_CLOSING_DAY, invoiceRefForMonth, clampDay, toISO, ymd } from "./invoice";
 import { nthBusinessDay } from "./business-days";
 import { shiftReferenceMonth } from "./date";
 
 type DB = SupabaseClient<Database>;
-
-const ACCOUNT_CLOSING_DAY = 31;
 
 /**
  * Quais destas assinaturas já têm ocorrência lançada na competência. Duas idas ao
@@ -146,38 +144,62 @@ export async function materializeRecurringExpenses(db: DB, userId: string, refMo
 }
 
 /**
+ * Chave de deduplicação de uma renda no mês.
+ *
+ * Só a `description` não basta: duas rendas com o mesmo nome na mesma
+ * competência (ex.: dois "Freela") colidiam e uma era descartada para sempre.
+ * Valor e modo de recorrência entram na chave para distingui-las.
+ */
+function incomeKey(i: { description: string; amount_cents: number; recurring_mode: string | null }) {
+  return `${i.description}|${i.amount_cents}|${i.recurring_mode ?? "day_of_month"}`;
+}
+
+/**
  * Materializa recebimentos recorrentes por "copiar do mês anterior": para cada
  * recebimento marcado como recorrente em `refMonth-1`, cria o equivalente em
  * `refMonth` se ainda não existir.
+ *
+ * Recorrências encerradas (`recurring_end_month` anterior a `refMonth`) não são
+ * copiadas. Três idas ao banco no total — antes era uma consulta por
+ * recebimento dentro do laço.
  */
 export async function materializeRecurringIncomes(db: DB, userId: string, refMonth: string) {
   const prevMonth = shiftReferenceMonth(refMonth, -1);
 
   const { data: prev } = await db
     .from("incomes")
-    .select("description, amount_cents, recurring_day, recurring_mode, recurring_business_day")
+    .select(
+      "description, amount_cents, recurring_day, recurring_mode, recurring_business_day, recurring_end_month",
+    )
     .eq("user_id", userId)
     .eq("is_recurring", true)
-    .eq("reference_month", prevMonth);
+    .eq("reference_month", prevMonth)
+    .or(`recurring_end_month.is.null,recurring_end_month.gte.${refMonth}`);
 
   if (!prev?.length) return 0;
 
-  let created = 0;
+  // Uma única leitura do mês de destino (era uma por recebimento).
+  const { data: current } = await db
+    .from("incomes")
+    .select("description, amount_cents, recurring_mode")
+    .eq("user_id", userId)
+    .eq("reference_month", refMonth);
+  const existing = new Set((current ?? []).map(incomeKey));
+
   const [ry, rm0] = ymd(refMonth);
+  const rows = [];
   for (const inc of prev) {
-    const { count } = await db
-      .from("incomes")
-      .select("id", { head: true, count: "exact" })
-      .eq("user_id", userId)
-      .eq("reference_month", refMonth)
-      .eq("description", inc.description);
-    if ((count ?? 0) > 0) continue;
+    const key = incomeKey(inc);
+    // Duas rendas idênticas no mês anterior geram uma só aqui — o `existing`
+    // acumula as chaves já enfileiradas para não duplicar dentro do próprio lote.
+    if (existing.has(key)) continue;
+    existing.add(key);
 
     const day =
       inc.recurring_mode === "nth_business_day"
         ? nthBusinessDay(ry, rm0, inc.recurring_business_day ?? 5)
         : clampDay(inc.recurring_day ?? 1, ry, rm0);
-    await db.from("incomes").insert({
+    rows.push({
       user_id: userId,
       description: inc.description,
       amount_cents: inc.amount_cents,
@@ -187,8 +209,14 @@ export async function materializeRecurringIncomes(db: DB, userId: string, refMon
       recurring_mode: inc.recurring_mode,
       recurring_day: inc.recurring_day,
       recurring_business_day: inc.recurring_business_day,
+      // A data de encerramento acompanha a cópia, senão a recorrência
+      // "reviveria" no mês seguinte.
+      recurring_end_month: inc.recurring_end_month,
     });
-    created++;
   }
-  return created;
+
+  if (!rows.length) return 0;
+  const { error } = await db.from("incomes").insert(rows);
+  if (error) return 0;
+  return rows.length;
 }

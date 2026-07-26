@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { todayISO } from "@/lib/date";
+import { sessionTimezone } from "@/lib/user-time";
 import { ExpenseForm, type ExpenseDefaults } from "@/components/expense-form";
 import { updateExpense } from "../actions";
 
@@ -64,7 +65,7 @@ export default async function EditarGastoPage({
         cards={cards ?? []}
         accounts={accounts ?? []}
         categories={categories ?? []}
-        today={todayISO()}
+        today={todayISO(await sessionTimezone(supabase))}
         expense={expense}
       />
 

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { CalendarCheck, CalendarClock, ChevronLeft, FileUp, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { currentReferenceMonth, formatDayMonth } from "@/lib/date";
+import { sessionTimezone } from "@/lib/user-time";
 import { invoiceRefForMonth, ymd } from "@/lib/invoice";
 import { resolveOpenMonths } from "@/lib/card-invoices";
 import { formatCents } from "@/lib/money";
@@ -13,15 +14,57 @@ import { materializeRecurringExpenses } from "@/lib/recurring";
 
 type Kind = "installment" | "recurring" | "single";
 
+/**
+ * Limite disponível do cartão: teto informado no cadastro menos o que já está
+ * comprometido — a soma das parcelas vivas nas competências cuja fatura ainda
+ * está EM ABERTO. Faturas pagas já liberaram o limite.
+ *
+ * Devolve `null` quando o usuário não informou o limite (o campo era coletado e
+ * nunca usado; agora ou serve, ou some da tela).
+ */
+async function availableLimit(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  cardId: string,
+  creditLimitCents: number | null,
+): Promise<number | null> {
+  if (creditLimitCents == null || creditLimitCents <= 0) return null;
+
+  const { data: openInvoices } = await supabase
+    .from("invoices")
+    .select("reference_month")
+    .eq("card_id", cardId)
+    .eq("status", "open");
+  if (!openInvoices?.length) return creditLimitCents;
+
+  const { data: inst } = await supabase
+    .from("installments")
+    .select("amount_cents")
+    .eq("card_id", cardId)
+    .is("deleted_at", null)
+    .in(
+      "reference_month",
+      openInvoices.map((i) => i.reference_month),
+    );
+
+  const committed = (inst ?? []).reduce((s, i) => s + i.amount_cents, 0);
+  return creditLimitCents - committed;
+}
+
 export default async function CartaoDetailPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ mes?: string }>;
+  searchParams: Promise<{
+    mes?: string;
+    /** Nº de competências pagas descartadas ao encurtar um parcelamento (AJ-19). */
+    pagas_descartadas?: string;
+    /** Nº de faturas em aberto cujas datas foram recalculadas ao mudar o ciclo. */
+    faturas_recalculadas?: string;
+  }>;
 }) {
   const { id } = await params;
-  const { mes } = await searchParams;
+  const { mes, pagas_descartadas, faturas_recalculadas } = await searchParams;
   const supabase = await createClient();
 
   const { data: card } = await supabase.from("cards").select("*").eq("id", id).single();
@@ -30,7 +73,7 @@ export default async function CartaoDetailPage({
   // Sem `?mes`, cai na PRÓXIMA fatura em aberto: se a fatura do mês corrente já foi
   // paga, progride para o mês seguinte (mesma lógica da lista de cartões). Com
   // `?mes` presente (navegação explícita), respeita o mês pedido.
-  const currentMonth = currentReferenceMonth();
+  const currentMonth = currentReferenceMonth(await sessionTimezone(supabase));
   const openByCard = await resolveOpenMonths(supabase, [id], currentMonth);
   const refMonth = mes ?? openByCard.get(id) ?? currentMonth;
 
@@ -99,6 +142,20 @@ export default async function CartaoDetailPage({
   const dueDate = invoice?.due_date ?? computed.dueDate;
   const closingDate = invoice?.closing_date ?? computed.closingDate;
 
+  // Limite disponível: o teto do cartão menos tudo o que já está comprometido —
+  // as parcelas vivas das faturas ainda EM ABERTO (as pagas já saíram do limite).
+  // Só aparece quando o usuário informou o limite no cadastro.
+  const availableCents = await availableLimit(supabase, id, card.credit_limit_cents);
+
+  const notices = [
+    pagas_descartadas && Number(pagas_descartadas) > 0
+      ? `${pagas_descartadas} competência(s) que estavam marcadas como pagas saíram do novo parcelamento. Confira as parcelas.`
+      : null,
+    faturas_recalculadas && Number(faturas_recalculadas) > 0
+      ? `${faturas_recalculadas} fatura(s) em aberto tiveram as datas recalculadas com o novo ciclo.`
+      : null,
+  ].filter(Boolean) as string[];
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
@@ -122,6 +179,15 @@ export default async function CartaoDetailPage({
           <Pencil size={20} />
         </Link>
       </div>
+
+      {notices.map((n) => (
+        <p
+          key={n}
+          className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200"
+        >
+          {n}
+        </p>
+      ))}
 
       <MonthNav basePath={`/cartoes/${id}`} refMonth={refMonth} />
 
@@ -150,6 +216,13 @@ export default async function CartaoDetailPage({
             </div>
           </div>
         </div>
+
+        {availableCents != null && (
+          <div className="mt-2 flex items-center justify-between rounded-xl bg-white/15 px-3 py-2 text-sm">
+            <span className="opacity-90">Limite disponível</span>
+            <span className="font-semibold">{formatCents(Math.max(0, availableCents))}</span>
+          </div>
+        )}
 
         {invoice && (
           <div className="mt-2">

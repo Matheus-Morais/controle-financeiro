@@ -5,12 +5,10 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { expenseSchema, parseSource } from "@/lib/schemas";
 import { generateInstallments } from "@/lib/installments";
-import { invoiceRefForMonth, clampDay, toISO, ymd } from "@/lib/invoice";
+import { ACCOUNT_CLOSING_DAY, invoiceRefForMonth, clampDay, toISO, ymd } from "@/lib/invoice";
+import { assertOwned } from "@/lib/ownership";
 
 type ActionState = { error?: string } | undefined;
-
-/** Contas (carteira) não têm fechamento; dia 31 faz a competência = mês da compra. */
-const ACCOUNT_CLOSING_DAY = 31;
 
 export async function createExpense(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const parsed = expenseSchema.safeParse(Object.fromEntries(formData));
@@ -38,7 +36,13 @@ export async function createExpense(_prev: ActionState, formData: FormData): Pro
     if (!card) return { error: "Cartão não encontrado." };
     closingDay = card.closing_day;
     dueDay = card.due_day;
+  } else if (!(await assertOwned(supabase, "accounts", source.id))) {
+    return { error: "Conta não encontrada." };
   }
+
+  // A categoria vem do formulário e a RLS não valida o dono do alvo da FK.
+  const categoryId = await assertOwned(supabase, "categories", e.category_id || null);
+  if (e.category_id && !categoryId) return { error: "Categoria não encontrada." };
 
   const parcels = generateInstallments({
     totalAmountCents: e.amount_cents,
@@ -47,64 +51,58 @@ export async function createExpense(_prev: ActionState, formData: FormData): Pro
     closingDay,
   });
 
-  // 1) transação
-  const { data: tx, error: txErr } = await supabase
-    .from("transactions")
-    .insert({
-      user_id: user.id,
+  // Parcelas. Contas (origem conta) guardam o vencimento (due_date) no dia da
+  // compra, ajustado ao mês de cada parcela; cartões usam invoices.
+  const purchaseDay = ymd(e.purchase_date)[2];
+  const installments = parcels.map((p) => {
+    const [py, pm0] = ymd(p.referenceMonth);
+    return {
       card_id: source.kind === "card" ? source.id : null,
       account_id: source.kind === "account" ? source.id : null,
-      category_id: e.category_id || null,
+      number: p.number,
+      amount_cents: p.amountCents,
+      reference_month: p.referenceMonth,
+      due_date: source.kind === "account" ? toISO(py, pm0, clampDay(purchaseDay, py, pm0)) : null,
+      status: "open" as const,
+    };
+  });
+
+  // Faturas por competência (só cartões; o `on conflict do nothing` da função
+  // garante que uma fatura já paga nunca é reaberta).
+  const invoices =
+    source.kind === "card"
+      ? [...new Set(parcels.map((p) => p.referenceMonth))].map((m) => {
+          const [y, m0] = ymd(m);
+          const ref = invoiceRefForMonth(y, m0, { closingDay, dueDay });
+          return {
+            card_id: source.id,
+            reference_month: ref.referenceMonth,
+            closing_date: ref.closingDate,
+            due_date: ref.dueDate,
+          };
+        })
+      : [];
+
+  // Uma única transação no banco: sem ela, uma falha entre os inserts deixaria
+  // a transação órfã (sem parcelas), invisível em faturas e relatórios.
+  const { error } = await supabase.rpc("create_expense_atomic", {
+    p_transaction: {
+      card_id: source.kind === "card" ? source.id : null,
+      account_id: source.kind === "account" ? source.id : null,
+      category_id: categoryId,
       description: e.description,
       kind: e.kind,
       total_amount_cents: e.amount_cents,
       purchase_date: e.purchase_date,
       installments_count: count,
       notes: e.notes || null,
-    })
-    .select("id")
-    .single();
-  if (txErr || !tx) return { error: txErr?.message ?? "Falha ao salvar o gasto." };
-
-  // 2) parcelas. Contas (origem conta) guardam o vencimento (due_date) no dia
-  //    da compra, ajustado ao mês de cada parcela; cartões usam invoices.
-  const purchaseDay = ymd(e.purchase_date)[2];
-  const { error: instErr } = await supabase.from("installments").insert(
-    parcels.map((p) => {
-      const [py, pm0] = ymd(p.referenceMonth);
-      return {
-        user_id: user.id,
-        transaction_id: tx.id,
-        card_id: source.kind === "card" ? source.id : null,
-        account_id: source.kind === "account" ? source.id : null,
-        number: p.number,
-        amount_cents: p.amountCents,
-        reference_month: p.referenceMonth,
-        due_date: source.kind === "account" ? toISO(py, pm0, clampDay(purchaseDay, py, pm0)) : null,
-        status: "open" as const,
-      };
-    }),
-  );
-  if (instErr) return { error: instErr.message };
-
-  // 3) faturas por competência (só para cartões; não sobrescreve pagas)
-  if (source.kind === "card") {
-    const months = [...new Set(parcels.map((p) => p.referenceMonth))];
-    const invoices = months.map((m) => {
-      const [y, m0] = ymd(m);
-      const ref = invoiceRefForMonth(y, m0, { closingDay, dueDay });
-      return {
-        user_id: user.id,
-        card_id: source.id,
-        reference_month: ref.referenceMonth,
-        closing_date: ref.closingDate,
-        due_date: ref.dueDate,
-        status: "open" as const,
-      };
-    });
-    await supabase
-      .from("invoices")
-      .upsert(invoices, { onConflict: "card_id,reference_month", ignoreDuplicates: true });
+    },
+    p_installments: installments,
+    p_invoices: invoices,
+  });
+  if (error) {
+    console.error("[gastos/novo] falha ao gravar:", error.code);
+    return { error: "Não foi possível salvar o gasto. Tente novamente." };
   }
 
   revalidatePath("/", "layout");

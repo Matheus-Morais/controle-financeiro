@@ -17,7 +17,10 @@ function BudgetInputRow({
 
   function commit() {
     const cents = parseBRLToCents(value) ?? 0;
-    startTransition(() => saveBudget(category.id, cents));
+    startTransition(async () => {
+      const res = await saveBudget(category.id, cents);
+      if (res?.error) alert(res.error);
+    });
     onSaved(category.id, cents > 0);
   }
 

@@ -29,7 +29,11 @@ export function InvoicePaidToggle({
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
-          await toggleInvoicePaid(invoiceId, !paid);
+          const res = await toggleInvoicePaid(invoiceId, !paid);
+          if (res?.error) {
+            alert(res.error);
+            return;
+          }
           // Ao marcar como paga (paid === false → paga), avança para o mês
           // seguinte — a fatura atual está resolvida. Ao desmarcar, fica no mês.
           if (!paid) {

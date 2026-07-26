@@ -9,7 +9,12 @@ export function RecurringToggle({ id, active }: { id: string; active: boolean })
   return (
     <button
       disabled={pending}
-      onClick={() => startTransition(() => toggleRecurringActive(id, !active))}
+      onClick={() =>
+        startTransition(async () => {
+          const res = await toggleRecurringActive(id, !active);
+          if (res?.error) alert(res.error);
+        })
+      }
       className={
         active
           ? "inline-flex items-center gap-1 rounded-full bg-brand/15 px-2.5 py-1 text-xs font-medium text-brand disabled:opacity-50"

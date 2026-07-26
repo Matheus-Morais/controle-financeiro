@@ -126,16 +126,28 @@ export function AccountManager({
 }: {
   accounts: ManagedAccount[];
   createAction: CreateAction;
-  updateAction: (id: string, patch: { name?: string; type?: AccountType; color?: string }) => Promise<void>;
+  updateAction: (
+    id: string,
+    patch: { name?: string; type?: AccountType; color?: string },
+  ) => Promise<{ error?: string }>;
   deleteAction: (id: string) => Promise<{ error?: string }>;
 }) {
   const [items, setItems] = useState(accounts);
   const [error, setError] = useState<string | undefined>();
   const formRef = useRef<HTMLFormElement>(null);
 
-  function handleUpdate(id: string, patch: { name?: string; type?: AccountType; color?: string }) {
+  async function handleUpdate(
+    id: string,
+    patch: { name?: string; type?: AccountType; color?: string },
+  ) {
+    const previous = items;
+    setError(undefined);
     setItems((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
-    updateAction(id, patch);
+    const res = await updateAction(id, patch);
+    if (res?.error) {
+      setItems(previous); // desfaz a atualização otimista
+      setError(res.error);
+    }
   }
 
   async function handleDelete(id: string) {

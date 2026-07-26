@@ -8,6 +8,7 @@ import {
   shiftReferenceMonth,
 } from "@/lib/date";
 import { invoiceRefForMonth, ymd } from "@/lib/invoice";
+import { sessionTimezone } from "@/lib/user-time";
 import { aggregateInstallmentTotals } from "@/lib/reports";
 import { resolveOpenMonths } from "@/lib/card-invoices";
 import { materializeRecurringExpenses } from "@/lib/recurring";
@@ -29,7 +30,7 @@ export default async function CartoesPage() {
     .eq("active", true)
     .order("created_at", { ascending: true });
 
-  const currentMonth = currentReferenceMonth();
+  const currentMonth = currentReferenceMonth(await sessionTimezone(supabase));
   const nextMonth = shiftReferenceMonth(currentMonth, 1);
 
   // Materializa recorrentes do mês corrente e do próximo (por usuário, não por

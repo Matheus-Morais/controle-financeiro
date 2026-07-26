@@ -528,7 +528,10 @@ export interface ImportContext {
   cycle: CardCycle;
 }
 
-export interface TransactionRow {
+// As três linhas abaixo são `type` (não `interface`) de propósito: só type
+// aliases de objeto ganham index signature implícita, e sem ela não são
+// atribuíveis a `Json` — o formato do payload das funções RPC atômicas.
+export type TransactionRow = {
   id: string;
   user_id: string;
   card_id: string;
@@ -542,9 +545,9 @@ export interface TransactionRow {
   installments_count: number;
   notes: null;
   statement_description: string;
-}
+};
 
-export interface InstallmentRow {
+export type InstallmentRow = {
   user_id: string;
   transaction_id: string;
   card_id: string;
@@ -553,16 +556,16 @@ export interface InstallmentRow {
   amount_cents: number;
   reference_month: string;
   status: "open";
-}
+};
 
-export interface InvoiceRow {
+export type InvoiceRow = {
   user_id: string;
   card_id: string;
   reference_month: string;
   closing_date: string;
   due_date: string;
   status: "open";
-}
+};
 
 export interface ImportRows {
   transactions: TransactionRow[];

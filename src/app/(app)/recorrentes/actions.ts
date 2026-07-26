@@ -5,11 +5,14 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { recurringSchema, parseSource } from "@/lib/schemas";
 import { materializeRecurringExpenses } from "@/lib/recurring";
-import { currentReferenceMonth, shiftReferenceMonth } from "@/lib/date";
+import { shiftReferenceMonth } from "@/lib/date";
+import { userCurrentReferenceMonth } from "@/lib/user-time";
+import { assertOwned } from "@/lib/ownership";
 
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 
 type ActionState = { error?: string } | undefined;
+type ActionResult = { error?: string };
 
 export async function createRecurring(
   _prev: ActionState,
@@ -26,11 +29,20 @@ export async function createRecurring(
   if (!user) return { error: "Não autenticado." };
 
   const source = parseSource(r.source);
+
+  // A RLS aprova o insert por causa do user_id, mas não valida o dono das FKs —
+  // sem estas checagens, um POST forjado grava a assinatura num cartão alheio.
+  if (!(await assertOwned(supabase, source.kind === "card" ? "cards" : "accounts", source.id))) {
+    return { error: source.kind === "card" ? "Cartão não encontrado." : "Conta não encontrada." };
+  }
+  const categoryId = await assertOwned(supabase, "categories", r.category_id || null);
+  if (r.category_id && !categoryId) return { error: "Categoria não encontrada." };
+
   const { error } = await supabase.from("recurring_expenses").insert({
     user_id: user.id,
     card_id: source.kind === "card" ? source.id : null,
     account_id: source.kind === "account" ? source.id : null,
-    category_id: r.category_id || null,
+    category_id: categoryId,
     description: r.description,
     amount_cents: r.amount_cents,
     billing_day: r.billing_day,
@@ -39,8 +51,13 @@ export async function createRecurring(
   });
   if (error) return { error: error.message };
 
-  // Materializa o mês corrente para já aparecer nas faturas/dashboard.
-  await materializeRecurringExpenses(supabase, user.id, currentReferenceMonth());
+  // Materializa o mês corrente (no timezone DO USUÁRIO) para já aparecer nas
+  // faturas/dashboard.
+  await materializeRecurringExpenses(
+    supabase,
+    user.id,
+    await userCurrentReferenceMonth(supabase, user.id),
+  );
 
   revalidatePath("/recorrentes");
   revalidatePath("/", "layout");
@@ -91,7 +108,9 @@ export async function changeRecurringCard(
     .single();
   if (!card) return { error: "Cartão de destino não encontrado." };
 
-  const currentMonth = currentReferenceMonth();
+  // Timezone DO USUÁRIO: com o default do servidor, na virada do mês o corte de
+  // ciclo cairia no mês errado — e isso é permanente no dado.
+  const currentMonth = await userCurrentReferenceMonth(supabase, user.id);
   // Mês a partir do qual o novo cartão passa a cobrar.
   const cutover = currentMonthCharged ? shiftReferenceMonth(currentMonth, 1) : currentMonth;
 
@@ -128,16 +147,40 @@ export async function changeRecurringCard(
   return {};
 }
 
-export async function toggleRecurringActive(id: string, active: boolean): Promise<void> {
+export async function toggleRecurringActive(id: string, active: boolean): Promise<ActionResult> {
   const supabase = await createClient();
-  await supabase.from("recurring_expenses").update({ active }).eq("id", id);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado." };
+
+  const { error } = await supabase
+    .from("recurring_expenses")
+    .update({ active })
+    .eq("id", id)
+    .eq("user_id", user.id);
+  if (error) return { error: error.message };
+
   revalidatePath("/recorrentes");
+  return {};
 }
 
-export async function deleteRecurring(id: string): Promise<void> {
+export async function deleteRecurring(id: string): Promise<ActionResult> {
   const supabase = await createClient();
-  await supabase.from("recurring_expenses").delete().eq("id", id);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado." };
+
+  const { error } = await supabase
+    .from("recurring_expenses")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user.id);
+  if (error) return { error: error.message };
+
   revalidatePath("/recorrentes");
+  return {};
 }
 
 /**

@@ -8,6 +8,7 @@ import { toISO, ymd } from "@/lib/invoice";
 import { nthBusinessDay } from "@/lib/business-days";
 
 type ActionState = { error?: string } | undefined;
+type ActionResult = { error?: string };
 
 export async function createIncome(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const parsed = incomeSchema.safeParse(Object.fromEntries(formData));
@@ -50,9 +51,52 @@ export async function createIncome(_prev: ActionState, formData: FormData): Prom
   redirect(`/recebimentos?mes=${referenceMonth}`);
 }
 
-export async function deleteIncome(id: string): Promise<void> {
+export async function deleteIncome(id: string): Promise<ActionResult> {
   const supabase = await createClient();
-  await supabase.from("incomes").delete().eq("id", id);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado." };
+
+  const { error } = await supabase.from("incomes").delete().eq("id", id).eq("user_id", user.id);
+  if (error) return { error: error.message };
+
   revalidatePath("/recebimentos");
   revalidatePath("/");
+  return {};
+}
+
+/**
+ * Encerra a repetição de uma renda recorrente a partir da competência dela.
+ *
+ * Antes, a única forma de parar era apagar o recebimento do mês — pouco
+ * descobrível e frágil (a materialização copia do mês anterior, então o mês
+ * seguinte voltava a recriá-lo). `recurring_end_month` marca a última
+ * competência em que a renda ainda se repete; o registro do mês permanece.
+ */
+export async function endIncomeRecurrence(id: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado." };
+
+  const { data: income } = await supabase
+    .from("incomes")
+    .select("reference_month")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!income) return { error: "Recebimento não encontrado." };
+
+  const { error } = await supabase
+    .from("incomes")
+    .update({ recurring_end_month: income.reference_month })
+    .eq("id", id)
+    .eq("user_id", user.id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/recebimentos");
+  revalidatePath("/");
+  return {};
 }

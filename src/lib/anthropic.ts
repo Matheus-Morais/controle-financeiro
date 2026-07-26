@@ -8,6 +8,11 @@
  *
  * O JSON Schema é escrito à mão (em vez do helper `zodOutputFormat`) para não
  * acoplar à versão do Zod do SDK — o projeto usa Zod v3 e o helper espera v4.
+ *
+ * TODO(zod-v4): migrar o projeto para Zod v4 e trocar OUTPUT_SCHEMA por
+ * `zodOutputFormat(extractedInvoiceSchema)`. A migração toca `schemas.ts` e
+ * `invoice-import.ts` (mudanças de API em `error.issues` e nos refinements),
+ * então vale como PR próprio — não junto com outra mudança de comportamento.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -110,7 +115,10 @@ export async function extractInvoice(
   pdfBase64: string,
   categoryNames: string[],
 ): Promise<ExtractedInvoice> {
-  const client = new Anthropic();
+  // A rota declara maxDuration = 60; sem timeout explícito o SDK esperaria ~10
+  // min e a Vercel mataria a função antes, devolvendo erro de plataforma em vez
+  // da mensagem tratada. 50 s deixa folga para responder dentro do teto.
+  const client = new Anthropic({ timeout: 50_000, maxRetries: 1 });
 
   const response = await client.messages.create({
     model: MODEL,
