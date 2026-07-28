@@ -3,7 +3,8 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ChevronDown, Lock, Unlock } from "lucide-react";
-import { Spinner, WaveformLoader } from "@/components/loader";
+import { Spinner } from "@/components/loader";
+import { AnalyzingInvoiceOverlay } from "@/components/analyzing-invoice-overlay";
 import { formatCents, parseBRLToCents } from "@/lib/money";
 import { referenceMonthFromDueDate } from "@/lib/invoice";
 import { formatDayMonth } from "@/lib/date";
@@ -422,16 +423,9 @@ export function ImportInvoice({
   // ── Fase 1: upload ──────────────────────────────────────────────────────
   if (phase === "upload") {
     return (
-      <form onSubmit={handleUpload} className="relative flex flex-col gap-4">
-        {/* overlay de análise da IA */}
-        {uploading && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 rounded-2xl bg-neutral-50 dark:bg-neutral-950">
-            <WaveformLoader size={48} color="var(--color-brand, #6366f1)" speed={0.9} />
-            <p className="text-sm font-medium text-neutral-600 dark:text-neutral-300">
-              Analisando sua fatura…
-            </p>
-          </div>
-        )}
+      <form onSubmit={handleUpload} className="flex flex-col gap-4">
+        {/* Overlay de análise da IA: tela cheia, acima da bottom-nav. */}
+        {uploading && <AnalyzingInvoiceOverlay />}
         <p className="text-sm text-neutral-500">
           Envie o PDF da fatura do cartão. Os lançamentos são lidos por IA e você revisa tudo antes
           de salvar.
