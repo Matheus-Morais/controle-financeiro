@@ -10,7 +10,8 @@ import { formatCents } from "@/lib/money";
 import { InvoiceTabs, type InvoiceItem } from "@/components/invoice-tabs";
 import { InvoicePaidToggle } from "@/components/invoice-paid-toggle";
 import { MonthNav } from "@/components/month-nav";
-import { materializeRecurringExpenses } from "@/lib/recurring";
+import { getSessionUser } from "@/lib/auth";
+import { materializeRecurringMonths } from "@/lib/recurring";
 
 type Kind = "installment" | "recurring" | "single";
 
@@ -18,6 +19,10 @@ type Kind = "installment" | "recurring" | "single";
  * Limite disponível do cartão: teto informado no cadastro menos o que já está
  * comprometido — a soma das parcelas vivas nas competências cuja fatura ainda
  * está EM ABERTO. Faturas pagas já liberaram o limite.
+ *
+ * A soma vem do banco (`card_committed_cents`, migration 0018): eram duas idas em
+ * série (faturas abertas → parcelas dessas competências), com o total montado em
+ * JS sobre todas as linhas — e portanto sujeito ao corte de `max-rows`.
  *
  * Devolve `null` quando o usuário não informou o limite (o campo era coletado e
  * nunca usado; agora ou serve, ou some da tela).
@@ -29,25 +34,12 @@ async function availableLimit(
 ): Promise<number | null> {
   if (creditLimitCents == null || creditLimitCents <= 0) return null;
 
-  const { data: openInvoices } = await supabase
-    .from("invoices")
-    .select("reference_month")
-    .eq("card_id", cardId)
-    .eq("status", "open");
-  if (!openInvoices?.length) return creditLimitCents;
+  const { data: committed, error } = await supabase.rpc("card_committed_cents", {
+    p_card_id: cardId,
+  });
+  if (error) return null;
 
-  const { data: inst } = await supabase
-    .from("installments")
-    .select("amount_cents")
-    .eq("card_id", cardId)
-    .is("deleted_at", null)
-    .in(
-      "reference_month",
-      openInvoices.map((i) => i.reference_month),
-    );
-
-  const committed = (inst ?? []).reduce((s, i) => s + i.amount_cents, 0);
-  return creditLimitCents - committed;
+  return creditLimitCents - (committed ?? 0);
 }
 
 export default async function CartaoDetailPage({
@@ -67,72 +59,68 @@ export default async function CartaoDetailPage({
   const { mes, pagas_descartadas, faturas_recalculadas } = await searchParams;
   const supabase = await createClient();
 
-  const { data: card } = await supabase.from("cards").select("*").eq("id", id).single();
+  // Cartão, timezone e sessão são independentes — em série eram três round-trips.
+  const [{ data: card }, tz, user] = await Promise.all([
+    supabase.from("cards").select("*").eq("id", id).single(),
+    sessionTimezone(supabase),
+    getSessionUser(),
+  ]);
   if (!card) notFound();
 
   // Sem `?mes`, cai na PRÓXIMA fatura em aberto: se a fatura do mês corrente já foi
   // paga, progride para o mês seguinte (mesma lógica da lista de cartões). Com
-  // `?mes` presente (navegação explícita), respeita o mês pedido.
-  const currentMonth = currentReferenceMonth(await sessionTimezone(supabase));
-  const openByCard = await resolveOpenMonths(supabase, [id], currentMonth);
-  const refMonth = mes ?? openByCard.get(id) ?? currentMonth;
+  // `?mes` presente (navegação explícita), respeita o mês pedido — e aí a consulta
+  // das faturas pagas não precisa acontecer, que é o caso de toda navegação de mês.
+  const currentMonth = currentReferenceMonth(tz);
+  const refMonth =
+    mes ?? (await resolveOpenMonths(supabase, [id], currentMonth)).get(id) ?? currentMonth;
 
   // Recorrentes são propagados a TODOS os meses: materializa (idempotente) o mês
   // exibido antes de ler a fatura, para que assinaturas ativas apareçam mesmo em
   // meses que o cron do dia 1 ainda não alcançou (passado/futuro navegável). A
   // competência do recorrente é sempre o próprio mês (ver lib/recurring.ts), então
   // basta materializar o mês exibido.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
   if (user) {
-    await materializeRecurringExpenses(supabase, user.id, refMonth);
+    await materializeRecurringMonths(supabase, user.id, [refMonth]);
   }
 
-  // Parcelas do mês + transações associadas (kind/descrição/data). Inclui as
-  // excluídas (soft-delete): elas continuam visíveis, esmaecidas e no fim da lista.
-  const { data: installments } = await supabase
-    .from("installments")
-    .select("id, number, amount_cents, transaction_id, deleted_at")
-    .eq("card_id", id)
-    .eq("reference_month", refMonth);
-
-  const txIds = [...new Set((installments ?? []).map((i) => i.transaction_id))];
-  const { data: txs } = txIds.length
-    ? await supabase
-        .from("transactions")
-        .select("id, description, kind, installments_count, purchase_date")
-        .in("id", txIds)
-    : { data: [] };
-  const txById = new Map((txs ?? []).map((t) => [t.id, t]));
+  // Tudo o que a tela lê depois da materialização é independente entre si: os
+  // itens da fatura, a capa e o limite comprometido. Antes eram quatro esperas em
+  // série no fim da renderização (parcelas → transações → capa → limite).
+  //
+  // `invoice_items` já traz a transação junta e inclui as parcelas excluídas
+  // (soft-delete): elas continuam visíveis, esmaecidas e no fim da lista.
+  const [{ data: items }, { data: invoice }, availableCents] = await Promise.all([
+    supabase.rpc("invoice_items", { p_card_id: id, p_ref_month: refMonth }),
+    supabase
+      .from("invoices")
+      .select("id, closing_date, due_date, status")
+      .eq("card_id", id)
+      .eq("reference_month", refMonth)
+      .maybeSingle(),
+    // Limite disponível: o teto do cartão menos tudo o que já está comprometido —
+    // as parcelas vivas das faturas ainda EM ABERTO (as pagas já saíram do limite).
+    // Só aparece quando o usuário informou o limite no cadastro.
+    availableLimit(supabase, id, card.credit_limit_cents),
+  ]);
 
   const groups: Record<Kind, InvoiceItem[]> = { installment: [], recurring: [], single: [] };
   let total = 0;
-  for (const it of installments ?? []) {
-    const tx = txById.get(it.transaction_id);
-    if (!tx) continue;
+  for (const it of items ?? []) {
     const deleted = it.deleted_at != null;
     // Excluídos não entram no total da fatura.
     if (!deleted) total += it.amount_cents;
-    groups[tx.kind as Kind].push({
+    groups[it.kind as Kind].push({
       id: it.id,
       transactionId: it.transaction_id,
-      description: tx.description,
+      description: it.description,
       amountCents: it.amount_cents,
       number: it.number,
-      installmentsCount: tx.installments_count,
-      purchaseDate: tx.purchase_date,
+      installmentsCount: it.installments_count,
+      purchaseDate: it.purchase_date,
       deleted,
     });
   }
-
-  // Fatura do mês (para datas e marcar como paga).
-  const { data: invoice } = await supabase
-    .from("invoices")
-    .select("id, closing_date, due_date, status")
-    .eq("card_id", id)
-    .eq("reference_month", refMonth)
-    .maybeSingle();
 
   const [ry, rm0] = ymd(refMonth);
   const computed = invoiceRefForMonth(ry, rm0, {
@@ -141,11 +129,6 @@ export default async function CartaoDetailPage({
   });
   const dueDate = invoice?.due_date ?? computed.dueDate;
   const closingDate = invoice?.closing_date ?? computed.closingDate;
-
-  // Limite disponível: o teto do cartão menos tudo o que já está comprometido —
-  // as parcelas vivas das faturas ainda EM ABERTO (as pagas já saíram do limite).
-  // Só aparece quando o usuário informou o limite no cadastro.
-  const availableCents = await availableLimit(supabase, id, card.credit_limit_cents);
 
   const notices = [
     pagas_descartadas && Number(pagas_descartadas) > 0

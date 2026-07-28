@@ -4,7 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { currentReferenceMonth, formatDayMonth, shiftReferenceMonth, todayISO } from "@/lib/date";
 import { sessionTimezone } from "@/lib/user-time";
 import { formatCents } from "@/lib/money";
-import { materializeRecurringExpenses } from "@/lib/recurring";
+import { getSessionUser } from "@/lib/auth";
+import { materializeRecurringMonths } from "@/lib/recurring";
 import { MonthNav } from "@/components/month-nav";
 import { BillPaidToggle } from "@/components/bill-paid-toggle";
 
@@ -15,54 +16,37 @@ export default async function ContasPage({
 }) {
   const { mes } = await searchParams;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
   // Calendário no timezone DO USUÁRIO (RN-08) — com o default do servidor, na
-  // virada do mês esta tela mostraria um mês e o dashboard, outro.
-  const tz = await sessionTimezone(supabase);
+  // virada do mês esta tela mostraria um mês e o dashboard, outro. A sessão não
+  // depende do timezone: as duas leituras vão juntas.
+  const [tz, user] = await Promise.all([sessionTimezone(supabase), getSessionUser()]);
   const refMonth = mes ?? currentReferenceMonth(tz);
 
   // Contas fixas recorrentes são propagadas a todos os meses: materializa
   // (idempotente) o mês exibido antes de ler, para aparecerem mesmo em meses
-  // que o cron do dia 1 ainda não alcançou.
+  // que o cron do dia 1 ainda não alcançou. Os dois meses vão no mesmo lote.
   if (user) {
-    await materializeRecurringExpenses(supabase, user.id, shiftReferenceMonth(refMonth, -1));
-    await materializeRecurringExpenses(supabase, user.id, refMonth);
+    await materializeRecurringMonths(supabase, user.id, [shiftReferenceMonth(refMonth, -1), refMonth]);
   }
 
-  // Parcelas de origem CONTA (não-cartão) da competência.
-  const { data: installments } = await supabase
-    .from("installments")
-    .select("id, account_id, amount_cents, due_date, status, transaction_id")
-    .eq("reference_month", refMonth)
-    .not("account_id", "is", null)
-    .is("deleted_at", null);
+  // Parcelas de origem CONTA (não-cartão) da competência, já com a descrição da
+  // transação e o nome/cor da conta resolvidos no banco — eram três consultas
+  // (parcelas, depois transações e contas em paralelo).
+  const { data: bills } = await supabase.rpc("account_bills", { p_ref_month: refMonth });
 
-  const rows = installments ?? [];
-  const txIds = [...new Set(rows.map((r) => r.transaction_id))];
-  const accIds = [...new Set(rows.map((r) => r.account_id).filter(Boolean))] as string[];
-
-  const [{ data: txs }, { data: accounts }] = await Promise.all([
-    supabase.from("transactions").select("id, description, kind").in("id", txIds),
-    supabase.from("accounts").select("id, name, color").in("id", accIds),
-  ]);
-
-  const txById = new Map((txs ?? []).map((t) => [t.id, t]));
-  const accById = new Map((accounts ?? []).map((a) => [a.id, a]));
-
-  const items = rows
+  const items = (bills ?? [])
     .map((r) => ({
       id: r.id,
-      description: txById.get(r.transaction_id)?.description ?? "Conta",
-      kind: txById.get(r.transaction_id)?.kind ?? "single",
-      accountName: r.account_id ? accById.get(r.account_id)?.name ?? "—" : "—",
-      accountColor: (r.account_id ? accById.get(r.account_id)?.color : null) ?? "#64748b",
+      description: r.description,
+      kind: r.kind,
+      accountName: r.account_name ?? "—",
+      accountColor: r.account_color ?? "#64748b",
       amountCents: r.amount_cents,
       dueDate: r.due_date,
       paid: r.status === "paid",
     }))
+    // Vencimento nulo vai para o fim da lista.
     .sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"));
 
   const total = items.reduce((s, i) => s + i.amountCents, 0);
