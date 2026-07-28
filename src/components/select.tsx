@@ -184,7 +184,9 @@ export function Select({
             onClick={close}
             className="absolute inset-0 bg-black/40 motion-safe:animate-fade-in"
           />
-          <div className="relative flex max-h-[75svh] flex-col rounded-t-3xl bg-white pb-safe-bottom shadow-2xl motion-safe:animate-sheet-up dark:bg-neutral-900">
+          {/* O ring separa o sheet do fundo no escuro, onde o backdrop preto e o
+              bg-neutral-900 quase se confundem. */}
+          <div className="relative flex max-h-[75svh] flex-col rounded-t-3xl bg-white pb-safe-bottom shadow-2xl ring-1 ring-black/5 motion-safe:animate-sheet-up dark:bg-neutral-900 dark:ring-white/10">
             <div className="shrink-0 px-4 pb-1 pt-3">
               <div
                 aria-hidden
@@ -202,7 +204,7 @@ export function Select({
               onKeyDown={handleKeyDown}
               aria-label={title ?? ariaLabel}
               aria-activedescendant={`${baseId}-${active}`}
-              className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-2 outline-none"
+              className="min-h-0 flex-1 overflow-y-auto px-2 pb-5 pt-2 outline-none"
             >
               {options.map((option, i) => {
                 const isSelected = option.value === current;

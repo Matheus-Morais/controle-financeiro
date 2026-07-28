@@ -72,14 +72,18 @@ export function ExpenseForm({
         </span>
         <div className="flex items-baseline gap-1.5">
           <span className="text-xl font-medium text-neutral-400">R$</span>
+          {/* `size` em caracteres faz o campo acompanhar o que foi digitado, para
+              o "R$" e o número ficarem sempre juntos e o bloco centralizado —
+              com largura fixa o placeholder curto deixava um vão no meio. */}
           <input
             inputMode="decimal"
             required
+            size={Math.max(4, amount.length)}
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="0,00"
             aria-label="Valor total"
-            className="w-40 border-0 bg-transparent p-0 text-center text-4xl font-bold tabular-nums outline-none placeholder:text-neutral-300 focus:ring-0 dark:placeholder:text-neutral-700"
+            className="w-auto border-0 bg-transparent p-0 text-left text-4xl font-bold tabular-nums outline-none placeholder:text-neutral-300 focus:ring-0 dark:placeholder:text-neutral-700"
           />
         </div>
         <input type="hidden" name="amount_cents" value={cents} />
@@ -195,7 +199,7 @@ export function ExpenseForm({
 
       {/* Botão fixo acima da bottom-nav: antes rolava junto e ficava abaixo da
           dobra assim que o bloco de parcelamento aparecia. */}
-      <div className="sticky bottom-24 -mx-4 mt-1 bg-gradient-to-t from-neutral-50 via-neutral-50 px-4 pb-1 pt-3 dark:from-neutral-950 dark:via-neutral-950">
+      <div className="sticky bottom-24 -mx-4 mt-1 bg-gradient-to-t from-neutral-50 via-neutral-50 to-transparent px-4 pb-1 pt-10 dark:from-neutral-950 dark:via-neutral-950">
         <SubmitButton pendingLabel="Salvando…">
           {expense ? "Salvar alterações" : "Salvar gasto"}
         </SubmitButton>
