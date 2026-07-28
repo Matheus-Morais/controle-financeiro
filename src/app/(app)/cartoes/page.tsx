@@ -11,7 +11,8 @@ import { invoiceRefForMonth, ymd } from "@/lib/invoice";
 import { sessionTimezone } from "@/lib/user-time";
 import { aggregateInstallmentTotals } from "@/lib/reports";
 import { resolveOpenMonths } from "@/lib/card-invoices";
-import { materializeRecurringExpenses } from "@/lib/recurring";
+import { getSessionUser } from "@/lib/auth";
+import { materializeRecurringMonths } from "@/lib/recurring";
 import { formatCents } from "@/lib/money";
 
 /** Rótulo do valor conforme a distância entre a fatura em aberto e o mês corrente. */
@@ -24,24 +25,26 @@ function openMonthLabel(currentMonth: string, openMonth: string): string {
 export default async function CartoesPage() {
   const supabase = await createClient();
 
-  const { data: cards } = await supabase
-    .from("cards")
-    .select("id, name, brand, closing_day, due_day, color, last_four")
-    .eq("active", true)
-    .order("created_at", { ascending: true });
+  // Cartões, timezone e sessão são independentes entre si — em série custavam
+  // três round-trips onde um basta.
+  const [{ data: cards }, tz, user] = await Promise.all([
+    supabase
+      .from("cards")
+      .select("id, name, brand, closing_day, due_day, color, last_four")
+      .eq("active", true)
+      .order("created_at", { ascending: true }),
+    sessionTimezone(supabase),
+    getSessionUser(),
+  ]);
 
-  const currentMonth = currentReferenceMonth(await sessionTimezone(supabase));
+  const currentMonth = currentReferenceMonth(tz);
   const nextMonth = shiftReferenceMonth(currentMonth, 1);
 
   // Materializa recorrentes do mês corrente e do próximo (por usuário, não por
   // cartão) para que o total da fatura em aberto — inclusive quando ela já é a do
   // "próximo mês" — não venha subestimado. Mesmo padrão do detalhe do cartão.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
   if (user) {
-    await materializeRecurringExpenses(supabase, user.id, currentMonth);
-    await materializeRecurringExpenses(supabase, user.id, nextMonth);
+    await materializeRecurringMonths(supabase, user.id, [currentMonth, nextMonth]);
   }
 
   const cardIds = (cards ?? []).map((c) => c.id);

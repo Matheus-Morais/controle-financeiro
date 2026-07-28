@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { ArrowLeftRight } from "lucide-react";
+import { Select } from "@/components/select";
 import { changeRecurringCard } from "@/app/(app)/recorrentes/actions";
 
 interface Card {
@@ -75,17 +76,13 @@ export function ChangeCardModal({
             <div className="flex flex-col gap-4">
               <label className="flex flex-col gap-1 text-sm">
                 Novo cartão
-                <select
+                <Select
                   value={newCardId}
-                  onChange={(e) => setNewCardId(e.target.value)}
-                  className="rounded-xl border border-neutral-300 bg-white px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800"
-                >
-                  {options.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setNewCardId}
+                  title="Novo cartão"
+                  ariaLabel="Novo cartão"
+                  options={options.map((c) => ({ value: c.id, label: c.name }))}
+                />
               </label>
 
               <fieldset className="flex flex-col gap-2 text-sm">

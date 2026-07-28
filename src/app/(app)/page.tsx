@@ -12,7 +12,8 @@ import { monthCashFlow, monthlyTotals, spendingByCategory, type InvoiceDue } fro
 import { formatCents } from "@/lib/money";
 import { SpendingCharts, type CategorySlice } from "@/components/spending-charts";
 import { MonthNav } from "@/components/month-nav";
-import { materializeRecurringExpenses } from "@/lib/recurring";
+import { getSessionUser } from "@/lib/auth";
+import { materializeRecurringMonths } from "@/lib/recurring";
 import type { InvoiceState } from "@/lib/invoice";
 
 const DEFAULT_TZ = "America/Sao_Paulo";
@@ -26,10 +27,12 @@ export default async function DashboardPage({
   const { mes } = await searchParams;
 
   // O timezone do usuário decide o "hoje" e o mês corrente (default de fallback).
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("display_name, timezone")
-    .single();
+  // O profile e a sessão não dependem um do outro: buscá-los em paralelo tira um
+  // round-trip do caminho crítico (o `getSessionUser` já veio quente do layout).
+  const [{ data: profile }, user] = await Promise.all([
+    supabase.from("profiles").select("display_name, timezone").single(),
+    getSessionUser(),
+  ]);
   const tz = profile?.timezone ?? DEFAULT_TZ;
   const today = todayISO(tz);
   const month = mes ?? currentReferenceMonth(tz);
@@ -39,12 +42,9 @@ export default async function DashboardPage({
   // quanto o "previsto" do gráfico incluam assinaturas ainda não alcançadas pelo
   // cron do dia 1 (mesmo padrão da lista de cartões). Materializar só o mês
   // seguinte deixava o próprio mês do dashboard dependendo do cron ter rodado.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Os dois meses vão no MESMO lote: eram duas cadeias de quatro selects em série.
   if (user) {
-    await materializeRecurringExpenses(supabase, user.id, month);
-    await materializeRecurringExpenses(supabase, user.id, nextMonth);
+    await materializeRecurringMonths(supabase, user.id, [month, nextMonth]);
   }
 
   const [{ data: cards }, { data: categories }, spending, monthly, flow, [forecastNext]] =

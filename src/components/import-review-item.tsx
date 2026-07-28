@@ -1,6 +1,7 @@
 "use client";
 
 import { Pencil } from "lucide-react";
+import { Select } from "@/components/select";
 import { formatCents, parseBRLToCents } from "@/lib/money";
 import type { ExistingOccurrence, ExtractedTipo } from "@/lib/invoice-import";
 
@@ -188,18 +189,16 @@ export function ImportReviewItem({
               />
             </label>
           </div>
-          <select
+          <Select
             value={item.categoryId}
-            onChange={(e) => onChange({ categoryId: e.target.value })}
-            className="rounded-lg border border-neutral-200 bg-neutral-50 px-2.5 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
-          >
-            <option value="">Sem categoria</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+            onChange={(categoryId) => onChange({ categoryId })}
+            title="Categoria"
+            ariaLabel="Categoria"
+            options={[
+              { value: "", label: "Sem categoria" },
+              ...categories.map((c) => ({ value: c.id, label: c.name })),
+            ]}
+          />
           <div className="flex items-center justify-between gap-2">
             {showRecurringToggle ? (
               <button

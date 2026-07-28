@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, FileUp } from "lucide-react";
+import { FileUp } from "lucide-react";
+import { BackLink } from "@/components/back-link";
 import { createClient } from "@/lib/supabase/server";
 import { todayISO } from "@/lib/date";
 import { sessionTimezone } from "@/lib/user-time";
@@ -20,23 +21,21 @@ export default async function NovoGastoPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Importar fatura é caminho ALTERNATIVO para o mesmo fim: virou um chip no
+          cabeçalho em vez do banner de largura total, que competia em peso com o
+          formulário logo abaixo. */}
       <div className="flex items-center gap-2">
-        <Link href="/" className="text-neutral-500">
-          <ChevronLeft />
-        </Link>
-        <h1 className="text-2xl font-bold">Adicionar gasto</h1>
+        <BackLink href="/" label="Voltar para o início" />
+        <h1 className="min-w-0 flex-1 truncate text-2xl font-bold">Adicionar gasto</h1>
+        {(cards?.length ?? 0) > 0 && (
+          <Link
+            href="/gastos/importar"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brand/10 px-3 py-1.5 text-xs font-semibold text-brand transition active:scale-95"
+          >
+            <FileUp size={14} /> Importar PDF
+          </Link>
+        )}
       </div>
-
-      {(cards?.length ?? 0) > 0 && (
-        <Link
-          href="/gastos/importar"
-          className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm shadow-sm dark:border-neutral-800 dark:bg-neutral-900"
-        >
-          <FileUp size={18} className="text-brand" />
-          <span className="flex-1">Importar fatura do cartão (PDF)</span>
-          <ChevronRight size={18} className="text-neutral-400" />
-        </Link>
-      )}
 
       {hasSource ? (
         <ExpenseForm

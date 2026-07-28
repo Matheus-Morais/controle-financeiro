@@ -241,6 +241,102 @@ export type Database = {
         };
         Returns: number;
       };
+      /**
+       * Assinaturas ainda NÃO materializadas nas competências pedidas, já com o
+       * ciclo do cartão embutido. Substitui a cadeia
+       * `recurring_expenses → cards → transactions → installments` por uma única
+       * ida ao banco; as datas continuam sendo calculadas em `lib/invoice.ts`.
+       * Recebe `p_user_id` pelo mesmo motivo da `materialize_recurring_atomic`.
+       */
+      pending_recurring_expenses: {
+        Args: { p_user_id: string; p_ref_months: string[] };
+        Returns: {
+          reference_month: string;
+          recurring_id: string;
+          card_id: string | null;
+          account_id: string | null;
+          category_id: string | null;
+          description: string;
+          amount_cents: number;
+          billing_day: number;
+          /** Null quando a assinatura não tem cartão (conta fixa). */
+          closing_day: number | null;
+          due_day: number | null;
+        }[];
+      };
+
+      // ── Agregações dos relatórios (migration 0018) ───────────────────────
+      // Sem parâmetro de usuário: quem recorta é a RLS do chamador. Por isso o
+      // EXECUTE é só de `authenticated` — passar o service client aqui não é
+      // apenas desaconselhado, é negado pelo banco.
+
+      /** Gasto por categoria na competência. `category_id` null = sem categoria. */
+      spending_by_category: {
+        Args: { p_ref_month: string };
+        Returns: { category_id: string | null; cents: number }[];
+      };
+      /** Total gasto por competência. Meses sem parcela não voltam na resposta. */
+      monthly_totals: {
+        Args: { p_months: string[] };
+        Returns: { reference_month: string; cents: number }[];
+      };
+      /**
+       * Fluxo de caixa do mês pelo regime de vencimento. O estado de exibição da
+       * fatura NÃO vem daqui — `deriveInvoiceState` decide a partir de `status` e
+       * `closing_date`.
+       */
+      month_cash_flow: {
+        Args: { p_month: string };
+        Returns: {
+          income_cents: number;
+          cash_spending_cents: number;
+          invoices: {
+            id: string;
+            card_id: string;
+            card_name: string | null;
+            card_color: string | null;
+            reference_month: string;
+            closing_date: string;
+            due_date: string;
+            status: InvoiceStatus;
+            total_cents: number;
+          }[];
+        };
+      };
+      /** Soma das parcelas vivas nas faturas ainda em aberto do cartão. */
+      card_committed_cents: {
+        Args: { p_card_id: string };
+        Returns: number;
+      };
+      /** Itens da fatura do mês, já com os dados da transação. Inclui excluídos. */
+      invoice_items: {
+        Args: { p_card_id: string; p_ref_month: string };
+        Returns: {
+          id: string;
+          number: number;
+          amount_cents: number;
+          transaction_id: string;
+          deleted_at: string | null;
+          description: string;
+          kind: ExpenseKind;
+          installments_count: number;
+          purchase_date: string;
+        }[];
+      };
+      /** Contas fora do cartão da competência, com transação e conta resolvidas. */
+      account_bills: {
+        Args: { p_ref_month: string };
+        Returns: {
+          id: string;
+          amount_cents: number;
+          due_date: string | null;
+          status: InstallmentStatus;
+          description: string;
+          kind: ExpenseKind;
+          account_name: string | null;
+          account_color: string | null;
+        }[];
+      };
     };
     Enums: {
       account_type: AccountType;

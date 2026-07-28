@@ -9,7 +9,8 @@
  *
  * Implementa só o subconjunto do PostgREST que o código usa: `select`, `insert`,
  * `update`, `upsert`, `delete`, os filtros `eq/in/lte/gte/is/not`, o `or` de
- * dois termos, os terminadores `single`/`maybeSingle` e a RPC de materialização.
+ * dois termos, os terminadores `single`/`maybeSingle` e as duas RPCs de
+ * recorrência (leitura das pendentes e gravação do lote).
  * Não é um Postgres — é o suficiente para as regras não passarem despercebidas.
  *
  * Arquivo de teste: importado apenas por `*.test.ts`.
@@ -245,10 +246,9 @@ export function createFakeDB(seed: Store = {}): FakeDB {
   const queries: string[] = [];
 
   /**
-   * Só a RPC de materialização é simulada — é a única que os testes exercitam.
-   * Aplica os inserts na mesma ordem da função Postgres (transações → parcelas →
-   * capas, estas com `on conflict do nothing`) e devolve quantas transações
-   * entraram, como o `get diagnostics row_count` da função.
+   * Espelho da função da migration 0016: aplica os inserts na mesma ordem
+   * (transações → parcelas → capas, estas com `on conflict do nothing`) e
+   * devolve quantas transações entraram, como o `get diagnostics row_count`.
    */
   function materializeRecurringAtomic(args: Record<string, unknown>) {
     const userId = args.p_user_id as string;
@@ -275,6 +275,54 @@ export function createFakeDB(seed: Store = {}): FakeDB {
     return txs.length;
   }
 
+  /**
+   * Espelho da função da migration 0017: as assinaturas ainda não materializadas
+   * nas competências pedidas, com o ciclo do cartão anexado (null quando a
+   * assinatura não tem cartão). Idempotência por (assinatura, competência) —
+   * parcela com soft-delete conta como lançada, igual ao `not exists` do SQL,
+   * que também não filtra `deleted_at`.
+   */
+  function pendingRecurringExpenses(args: Record<string, unknown>) {
+    const userId = args.p_user_id as string;
+    const months = (args.p_ref_months ?? []) as string[];
+    const table = (name: string) => (tables[name] ??= []);
+
+    const cardById = new Map(table("cards").map((c) => [c.id, c]));
+    const txById = new Map(table("transactions").map((t) => [t.id, t]));
+
+    // `${recurring_id}|${reference_month}` das ocorrências que já existem.
+    const materialized = new Set<string>();
+    for (const i of table("installments")) {
+      const tx = txById.get(i.transaction_id as string);
+      if (tx?.recurring_id) materialized.add(`${tx.recurring_id}|${i.reference_month}`);
+    }
+
+    const out: Row[] = [];
+    for (const ref of months) {
+      for (const r of table("recurring_expenses")) {
+        if (r.user_id !== userId || !r.active) continue;
+        if (cmp(r.start_month, ref) > 0) continue;
+        if (r.end_month != null && cmp(r.end_month, ref) < 0) continue;
+        if (materialized.has(`${r.id}|${ref}`)) continue;
+
+        const card = r.card_id ? cardById.get(r.card_id as string) : null;
+        out.push({
+          reference_month: ref,
+          recurring_id: r.id,
+          card_id: r.card_id ?? null,
+          account_id: r.account_id ?? null,
+          category_id: r.category_id ?? null,
+          description: r.description,
+          amount_cents: r.amount_cents,
+          billing_day: r.billing_day,
+          closing_day: card?.closing_day ?? null,
+          due_day: card?.due_day ?? null,
+        });
+      }
+    }
+    return out;
+  }
+
   return {
     tables,
     queries,
@@ -283,10 +331,14 @@ export function createFakeDB(seed: Store = {}): FakeDB {
     },
     rpc(fn: string, args: Record<string, unknown>) {
       queries.push(`rpc:${fn}`);
-      if (fn !== "materialize_recurring_atomic") {
-        throw new Error(`rpc não suportada no fake: ${fn}`);
+      switch (fn) {
+        case "materialize_recurring_atomic":
+          return Promise.resolve({ data: materializeRecurringAtomic(args), error: null });
+        case "pending_recurring_expenses":
+          return Promise.resolve({ data: pendingRecurringExpenses(args), error: null });
+        default:
+          throw new Error(`rpc não suportada no fake: ${fn}`);
       }
-      return Promise.resolve({ data: materializeRecurringAtomic(args), error: null });
     },
   };
 }

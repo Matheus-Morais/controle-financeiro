@@ -4,6 +4,11 @@
 
 :root {
   color-scheme: light dark;
+  /* Cor da marca também como CSS var: os loaders recebem a cor por prop inline
+     (`style`), onde as classes do Tailwind não chegam. Sem esta variável o
+     `var(--color-brand, …)` deles caía no fallback e renderizava fora da
+     identidade. Mantenha em sincronia com `theme.extend.colors.brand`. */
+  --color-brand: #16a34a;
 }
 
 html,

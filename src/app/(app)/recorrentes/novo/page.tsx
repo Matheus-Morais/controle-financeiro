@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
+import { BackLink } from "@/components/back-link";
 import { createClient } from "@/lib/supabase/server";
 import { todayISO } from "@/lib/date";
 import { sessionTimezone } from "@/lib/user-time";
@@ -20,9 +20,7 @@ export default async function NovaRecorrentePage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        <Link href="/recorrentes" className="text-neutral-500">
-          <ChevronLeft />
-        </Link>
+        <BackLink href="/recorrentes" label="Voltar para as recorrentes" />
         <h1 className="text-2xl font-bold">Nova recorrente</h1>
       </div>
 

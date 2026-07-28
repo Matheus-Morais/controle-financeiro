@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft } from "lucide-react";
+import { BackLink } from "@/components/back-link";
 import { createClient } from "@/lib/supabase/server";
 import { CardForm } from "@/components/card-form";
 import { DeleteCardButton } from "@/components/delete-card-button";
@@ -18,9 +17,7 @@ export default async function EditarCartaoPage({ params }: { params: Promise<{ i
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        <Link href={`/cartoes/${id}`} className="text-neutral-500">
-          <ChevronLeft />
-        </Link>
+        <BackLink href={`/cartoes/${id}`} label="Voltar para o cartão" />
         <h1 className="text-2xl font-bold">Editar cartão</h1>
       </div>
 

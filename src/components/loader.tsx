@@ -224,7 +224,7 @@ export function PageLoader({
       className={`flex w-full flex-col items-center justify-center gap-4 ${className}`.trim()}
       style={{ minHeight: "calc(100svh - 10rem)" }}
     >
-      <HatchLoader size={48} color="var(--color-brand, #6366f1)" />
+      <HatchLoader size={48} color="var(--color-brand)" />
       <p className="text-sm text-neutral-500">{label}</p>
     </div>
   );
