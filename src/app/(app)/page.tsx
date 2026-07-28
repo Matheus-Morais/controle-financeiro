@@ -35,13 +35,15 @@ export default async function DashboardPage({
   const month = mes ?? currentReferenceMonth(tz);
   const nextMonth = shiftReferenceMonth(month, 1);
 
-  // Materializa recorrentes do mês seguinte para que o "previsto" do gráfico já
-  // inclua assinaturas ainda não alcançadas pelo cron do dia 1 (mesmo padrão da
-  // lista de cartões).
+  // Materializa recorrentes do mês exibido e do seguinte, para que tanto o mês
+  // quanto o "previsto" do gráfico incluam assinaturas ainda não alcançadas pelo
+  // cron do dia 1 (mesmo padrão da lista de cartões). Materializar só o mês
+  // seguinte deixava o próprio mês do dashboard dependendo do cron ter rodado.
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (user) {
+    await materializeRecurringExpenses(supabase, user.id, month);
     await materializeRecurringExpenses(supabase, user.id, nextMonth);
   }
 

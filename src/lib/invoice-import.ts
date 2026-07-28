@@ -12,7 +12,8 @@
  */
 
 import { z } from "zod";
-import { addMonths, invoiceRefForMonth, toISO, ymd, type CardCycle } from "./invoice";
+import { invoiceRefForMonth, ymd, type CardCycle } from "./invoice";
+import { generateInstallments } from "./installments";
 
 // ── Schema da saída da IA (structured outputs) ──────────────────────────────
 
@@ -218,6 +219,13 @@ export interface ExistingOccurrence {
   number: number;
   installmentsCount: number;
   recurringId: string | null;
+  /**
+   * Parcela com soft-delete. CONTA como lançada, igual à materialização do cron
+   * (RN-24): o usuário excluiu a ocorrência de propósito, e reoferecê-la na
+   * próxima fatura importada é a mesma ressurreição que a idempotência evita.
+   * Ele continua podendo remarcar o item na revisão.
+   */
+  deleted: boolean;
 }
 
 /**
@@ -264,10 +272,14 @@ function namesMatch(a: string | null | undefined, b: string | null | undefined):
  *
  * 1. **chave exata** (nome bruto + valor + data), NA competência importada —
  *    reimport do MESMO PDF;
- * 2. **parcelado** — mesma `installmentSignature` (nome sem contador + valor da
+ * 2. **lançamento manual** — ocorrência SEM nome bruto na competência, com mesmo
+ *    valor, mesma data e nome que bate. Só a importação grava
+ *    `statement_description`, então sem este nível o gasto que o usuário lançou
+ *    à mão durante o mês voltava duplicado quando ele subia a fatura;
+ * 3. **parcelado** — mesma `installmentSignature` (nome sem contador + valor da
  *    parcela + total) em QUALQUER mês do cartão: ao subir a fatura seguinte, as
  *    parcelas futuras já foram materializadas em competências posteriores;
- * 3. **recorrente** — ocorrência da competência ligada a uma assinatura cujo nome
+ * 4. **recorrente** — ocorrência da competência ligada a uma assinatura cujo nome
  *    bate. Valor e data NÃO entram: assinatura reajusta, e a data materializada
  *    pelo cron é o `billing_day`, não a data impressa na fatura.
  */
@@ -284,6 +296,17 @@ export function matchExistingOccurrence(
       dedupeKey(o.statementDescription, o.amountCents, o.purchaseDate) === key,
   );
   if (exact) return exact;
+
+  const manual = occurrences.find(
+    (o) =>
+      o.referenceMonth === referenceMonth &&
+      o.statementDescription == null &&
+      o.amountCents === item.amountCents &&
+      o.purchaseDate === item.purchaseDate &&
+      (namesMatch(item.description, o.description) ||
+        namesMatch(item.statementDescription, o.description)),
+  );
+  if (manual) return manual;
 
   const p = item.parcela;
   if (p && p.total >= 2) {
@@ -501,6 +524,12 @@ export interface ValidatedImportItem {
   id: string;
   description: string;
   statementDescription: string;
+  /**
+   * Valor do LANÇAMENTO como impresso na fatura — ou seja, o valor da parcela
+   * quando o item é parcelado. O total da compra (`total_amount_cents` da
+   * transação) é derivado disto × o número de parcelas, para que a coluna
+   * signifique a mesma coisa em todos os fluxos (RN-04).
+   */
   amountCents: number;
   purchaseDate: string;
   categoryId: string | null;
@@ -577,15 +606,22 @@ export interface ImportRows {
 /**
  * Monta as linhas a gravar. Cada item vira UMA transação. Para as parcelas:
  * - Item com parcela (`installment`): a transação fica `installment` com
- *   `installments_count = total`; cria-se a parcela ATUAL na competência forçada
- *   e PROPAGAM-SE as seguintes (atual+1..total) para as competências
+ *   `installments_count = total` e `total_amount_cents` = o TOTAL da compra
+ *   (valor da parcela × total de parcelas — a coluna significa o mesmo que no
+ *   lançamento manual); cria-se a parcela ATUAL na competência forçada e
+ *   PROPAGAM-SE as seguintes (atual+1..total) para as competências
  *   subsequentes. As anteriores (1..atual-1) não são criadas — pertencem a
  *   faturas passadas (histórico).
  * - Sem parcela (ou recorrente): uma parcela única na competência forçada.
  * Também monta a capa de cada fatura tocada.
+ *
+ * O cronograma sai do MESMO `generateInstallments` do lançamento manual, com a
+ * competência da fatura como âncora: um só lugar decide valor e mês de parcela.
  */
 export function buildImportRows(items: ValidatedImportItem[], ctx: ImportContext): ImportRows {
-  const [ry, rm0] = ymd(ctx.referenceMonth);
+  /** Total da compra: parcelado multiplica o valor da parcela pelo nº de parcelas. */
+  const totalCentsOf = (it: ValidatedImportItem) =>
+    !it.recurringId && it.installment ? it.amountCents * it.installment.count : it.amountCents;
 
   const transactions: TransactionRow[] = items.map((it) => ({
     id: it.id,
@@ -597,7 +633,7 @@ export function buildImportRows(items: ValidatedImportItem[], ctx: ImportContext
     description: it.description,
     // Recorrente vence parcela: item marcado como recorrente nasce `recurring`.
     kind: it.recurringId ? "recurring" : it.installment ? "installment" : "single",
-    total_amount_cents: it.amountCents,
+    total_amount_cents: totalCentsOf(it),
     purchase_date: it.purchaseDate,
     installments_count: it.recurringId ? 1 : it.installment ? it.installment.count : 1,
     notes: null,
@@ -622,16 +658,24 @@ export function buildImportRows(items: ValidatedImportItem[], ctx: ImportContext
       continue;
     }
     // Parcela atual (competência forçada) + as futuras nas competências seguintes.
-    for (let n = parcel.number; n <= parcel.count; n++) {
-      const [y, m0] = addMonths(ry, rm0, n - parcel.number);
+    const parcels = generateInstallments({
+      totalAmountCents: totalCentsOf(it),
+      count: parcel.count,
+      purchaseDate: it.purchaseDate,
+      closingDay: ctx.cycle.closingDay,
+      firstNumber: parcel.number,
+      // A fatura manda na competência; a data do PDF não a define (RN-38).
+      anchorMonth: ctx.referenceMonth,
+    });
+    for (const p of parcels) {
       installments.push({
         user_id: ctx.userId,
         transaction_id: it.id,
         card_id: ctx.cardId,
         account_id: null,
-        number: n,
-        amount_cents: it.amountCents,
-        reference_month: toISO(y, m0, 1),
+        number: p.number,
+        amount_cents: p.amountCents,
+        reference_month: p.referenceMonth,
         status: "open",
       });
     }

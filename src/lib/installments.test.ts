@@ -73,6 +73,56 @@ describe("generateInstallments", () => {
       generateInstallments({ totalAmountCents: 100, count: 0, purchaseDate: "2025-01-01", closingDay: 10 }),
     ).toThrow();
   });
+
+  // ── Retomada no meio do parcelamento (fatura importada "3/10", RN-42) ──────
+
+  it("firstNumber começa na parcela informada e não cria as anteriores", () => {
+    const parcelas = generateInstallments({
+      totalAmountCents: 200000,
+      count: 10,
+      purchaseDate: "2026-05-10",
+      closingDay: 25,
+      firstNumber: 3,
+      anchorMonth: "2026-07-01",
+    });
+    expect(parcelas).toHaveLength(8);
+    expect(parcelas[0]).toEqual({ number: 3, amountCents: 20000, referenceMonth: "2026-07-01" });
+    expect(parcelas[7]).toMatchObject({ number: 10, referenceMonth: "2027-02-01" });
+  });
+
+  it("a âncora manda na competência, ignorando a data da compra", () => {
+    // A parcela 1 cairia em maio pelo ciclo; a fatura importada diz julho.
+    const [primeira] = generateInstallments({
+      totalAmountCents: 30000,
+      count: 3,
+      purchaseDate: "2026-05-10",
+      closingDay: 25,
+      anchorMonth: "2026-07-01",
+    });
+    expect(primeira.referenceMonth).toBe("2026-07-01");
+  });
+
+  it("uma parcela vale o mesmo criada do zero ou retomada no meio", () => {
+    // O rateio da sobra é calculado sobre o cronograma completo: editar um gasto
+    // que começa na parcela 3 não pode mudar o valor das parcelas 3..7.
+    const base = { totalAmountCents: 10003, count: 7, purchaseDate: "2026-01-15", closingDay: 10 };
+    const completo = generateInstallments(base);
+    // Compra depois do fechamento → parcela 1 em fevereiro, logo a 3 é abril.
+    const retomado = generateInstallments({ ...base, firstNumber: 3, anchorMonth: "2026-04-01" });
+
+    expect(retomado.map((p) => p.amountCents)).toEqual(
+      completo.filter((p) => p.number >= 3).map((p) => p.amountCents),
+    );
+    expect(retomado.map((p) => p.referenceMonth)).toEqual(
+      completo.filter((p) => p.number >= 3).map((p) => p.referenceMonth),
+    );
+  });
+
+  it("rejeita firstNumber fora do intervalo", () => {
+    const base = { totalAmountCents: 1000, count: 3, purchaseDate: "2026-01-15", closingDay: 10 };
+    expect(() => generateInstallments({ ...base, firstNumber: 0 })).toThrow();
+    expect(() => generateInstallments({ ...base, firstNumber: 4 })).toThrow();
+  });
 });
 
 describe("remainingInstallments", () => {

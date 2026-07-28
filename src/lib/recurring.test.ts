@@ -106,6 +106,47 @@ describe("materializeRecurringExpenses", () => {
     db.tables.recurring_expenses[0].active = false;
     expect(await materializeRecurringExpenses(asDB(db), USER, AGO)).toBe(0);
   });
+
+  it("grava o lote inteiro numa única chamada atômica", async () => {
+    // Eram três inserts soltos POR assinatura: uma falha no meio deixava a
+    // transação sem parcela — invisível em fatura e relatório — e o tick
+    // seguinte criava outra órfã, sem nunca convergir.
+    db.tables.recurring_expenses.push({
+      id: "rec-2",
+      user_id: USER,
+      card_id: CARD,
+      account_id: null,
+      category_id: null,
+      description: "Spotify",
+      amount_cents: 2190,
+      billing_day: 5,
+      start_month: "2026-01-01",
+      end_month: null,
+      active: true,
+    });
+
+    const created = await materializeRecurringExpenses(asDB(db), USER, AGO);
+
+    expect(created).toBe(2);
+    expect(db.queries.filter((q) => q.startsWith("rpc:"))).toEqual([
+      "rpc:materialize_recurring_atomic",
+    ]);
+    expect(db.tables.transactions).toHaveLength(2);
+    expect(db.tables.installments).toHaveLength(2);
+    // Uma capa por (cartão, competência): as duas assinaturas dividem a fatura.
+    expect(db.tables.invoices).toHaveLength(1);
+  });
+
+  it("não deixa transação sem parcela quando a gravação falha", async () => {
+    const boom = {
+      ...db,
+      rpc: () => Promise.resolve({ data: null, error: { code: "23503" } }),
+    } as unknown as Parameters<typeof materializeRecurringExpenses>[0];
+
+    expect(await materializeRecurringExpenses(boom, USER, AGO)).toBe(0);
+    expect(db.tables.transactions).toHaveLength(0);
+    expect(db.tables.installments).toHaveLength(0);
+  });
 });
 
 describe("materializeRecurringIncomes", () => {

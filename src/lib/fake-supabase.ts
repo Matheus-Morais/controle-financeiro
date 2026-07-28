@@ -9,8 +9,8 @@
  *
  * Implementa só o subconjunto do PostgREST que o código usa: `select`, `insert`,
  * `update`, `upsert`, `delete`, os filtros `eq/in/lte/gte/is/not`, o `or` de
- * dois termos e os terminadores `single`/`maybeSingle`. Não é um Postgres — é o
- * suficiente para as regras não passarem despercebidas.
+ * dois termos, os terminadores `single`/`maybeSingle` e a RPC de materialização.
+ * Não é um Postgres — é o suficiente para as regras não passarem despercebidas.
  *
  * Arquivo de teste: importado apenas por `*.test.ts`.
  */
@@ -229,9 +229,10 @@ class QueryBuilder implements PromiseLike<{ data: Row[] | Row | null; error: nul
 
 export interface FakeDB {
   from(table: string): QueryBuilder;
+  rpc(fn: string, args: Record<string, unknown>): Promise<{ data: unknown; error: null }>;
   /** Conteúdo bruto do armazém, para asserções. */
   tables: Store;
-  /** Log `tabela:operação` de cada query — usado para detectar N+1. */
+  /** Log `tabela:operação` (e `rpc:<fn>`) de cada query — usado para detectar N+1. */
   queries: string[];
 }
 
@@ -242,11 +243,50 @@ export function createFakeDB(seed: Store = {}): FakeDB {
     tables[t] = rows.map((r) => ({ id: nextId(), ...r }));
   }
   const queries: string[] = [];
+
+  /**
+   * Só a RPC de materialização é simulada — é a única que os testes exercitam.
+   * Aplica os inserts na mesma ordem da função Postgres (transações → parcelas →
+   * capas, estas com `on conflict do nothing`) e devolve quantas transações
+   * entraram, como o `get diagnostics row_count` da função.
+   */
+  function materializeRecurringAtomic(args: Record<string, unknown>) {
+    const userId = args.p_user_id as string;
+    const txs = (args.p_transactions ?? []) as Row[];
+    const insts = (args.p_installments ?? []) as Row[];
+    const invs = (args.p_invoices ?? []) as Row[];
+
+    const table = (name: string) => (tables[name] ??= []);
+
+    queries.push("transactions:insert");
+    for (const t of txs) table("transactions").push({ user_id: userId, ...t });
+
+    queries.push("installments:insert");
+    for (const i of insts) table("installments").push({ id: nextId(), user_id: userId, ...i });
+
+    queries.push("invoices:insert");
+    for (const v of invs) {
+      const clash = table("invoices").find(
+        (r) => r.card_id === v.card_id && r.reference_month === v.reference_month,
+      );
+      if (clash) continue;
+      table("invoices").push({ id: nextId(), user_id: userId, status: "open", ...v });
+    }
+    return txs.length;
+  }
+
   return {
     tables,
     queries,
     from(table: string) {
       return new QueryBuilder(tables, table, (t, kind) => queries.push(`${t}:${kind}`));
+    },
+    rpc(fn: string, args: Record<string, unknown>) {
+      queries.push(`rpc:${fn}`);
+      if (fn !== "materialize_recurring_atomic") {
+        throw new Error(`rpc não suportada no fake: ${fn}`);
+      }
+      return Promise.resolve({ data: materializeRecurringAtomic(args), error: null });
     },
   };
 }

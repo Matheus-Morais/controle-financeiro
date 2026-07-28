@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { ACCOUNT_CLOSING_DAY, invoiceRefForMonth, clampDay, toISO, ymd } from "./invoice";
@@ -5,6 +6,40 @@ import { nthBusinessDay } from "./business-days";
 import { shiftReferenceMonth } from "./date";
 
 type DB = SupabaseClient<Database>;
+
+// `type` (não `interface`) de propósito: só type aliases de objeto ganham index
+// signature implícita, e sem ela não são atribuíveis a `Json` — o formato do
+// payload da RPC atômica. Mesmo motivo das linhas em `invoice-import.ts`.
+type MaterializedTransaction = {
+  id: string;
+  card_id: string | null;
+  account_id: string | null;
+  category_id: string | null;
+  recurring_id: string;
+  description: string;
+  kind: "recurring";
+  total_amount_cents: number;
+  purchase_date: string;
+  installments_count: number;
+};
+
+type MaterializedInstallment = {
+  transaction_id: string;
+  card_id: string | null;
+  account_id: string | null;
+  number: number;
+  amount_cents: number;
+  reference_month: string;
+  due_date: string | null;
+  status: "open";
+};
+
+type MaterializedInvoice = {
+  card_id: string;
+  reference_month: string;
+  closing_date: string;
+  due_date: string;
+};
 
 /**
  * Quais destas assinaturas já têm ocorrência lançada na competência. Duas idas ao
@@ -49,6 +84,12 @@ async function materializedRecurringIds(
  * Materializa (idempotentemente) os gastos recorrentes ativos de um usuário no
  * mês `refMonth` (`YYYY-MM-01`): cria a transação + parcela única + fatura.
  * Chamado na criação (mês corrente) e no cron do dia 1 (novo mês).
+ *
+ * O lote inteiro é gravado por `materialize_recurring_atomic` — uma transação no
+ * Postgres. Antes eram três inserts soltos POR ASSINATURA: uma falha no meio
+ * deixava a transação sem parcela (invisível em fatura e relatório) e, como a
+ * idempotência olha a parcela na competência (RN-24), o tick seguinte criava
+ * outra órfã, sem nunca convergir.
  */
 export async function materializeRecurringExpenses(db: DB, userId: string, refMonth: string) {
   const { data: recurrings } = await db
@@ -78,42 +119,43 @@ export async function materializeRecurringExpenses(db: DB, userId: string, refMo
     refMonth,
   );
 
-  let created = 0;
+  const [ry, rm0] = ymd(refMonth);
+  const transactions: MaterializedTransaction[] = [];
+  const installments: MaterializedInstallment[] = [];
+  const invoices: MaterializedInvoice[] = [];
+  // Cartões que já têm capa no lote (a competência é a mesma para todos: refMonth).
+  const invoiceKeys = new Set<string>();
+
   for (const r of recurrings) {
     if (materialized.has(r.id)) continue;
 
-    const [ry, rm0] = ymd(refMonth);
     const purchaseDate = toISO(ry, rm0, clampDay(r.billing_day, ry, rm0));
-
     const card = r.card_id ? cardById.get(r.card_id) : null;
     const closingDay = card?.closing_day ?? ACCOUNT_CLOSING_DAY;
     const dueDay = card?.due_day ?? ACCOUNT_CLOSING_DAY;
+
+    // Id pré-gerado: liga parcela↔transação dentro do lote, sem round-trip.
+    const txId = randomUUID();
 
     // Competência do recorrente = o próprio mês materializado. Diferente de uma
     // compra avulsa, o recorrente NÃO é empurrado para a fatura seguinte quando o
     // billing_day cai depois do fechamento: ele sempre entra na fatura do mês.
     // O billing_day é só a data de referência da cobrança (purchase_date).
-    const { data: tx } = await db
-      .from("transactions")
-      .insert({
-        user_id: userId,
-        card_id: r.card_id,
-        account_id: r.account_id,
-        category_id: r.category_id,
-        recurring_id: r.id,
-        description: r.description,
-        kind: "recurring",
-        total_amount_cents: r.amount_cents,
-        purchase_date: purchaseDate,
-        installments_count: 1,
-      })
-      .select("id")
-      .single();
-    if (!tx) continue;
+    transactions.push({
+      id: txId,
+      card_id: r.card_id,
+      account_id: r.account_id,
+      category_id: r.category_id,
+      recurring_id: r.id,
+      description: r.description,
+      kind: "recurring",
+      total_amount_cents: r.amount_cents,
+      purchase_date: purchaseDate,
+      installments_count: 1,
+    });
 
-    await db.from("installments").insert({
-      user_id: userId,
-      transaction_id: tx.id,
+    installments.push({
+      transaction_id: txId,
       card_id: r.card_id,
       account_id: r.account_id,
       number: 1,
@@ -124,23 +166,34 @@ export async function materializeRecurringExpenses(db: DB, userId: string, refMo
       status: "open",
     });
 
-    if (r.card_id) {
+    // Uma capa por (cartão, competência): várias assinaturas do mesmo cartão
+    // dividem a mesma fatura. O `on conflict do nothing` da função absorveria a
+    // repetição, mas não faz sentido mandá-la.
+    if (r.card_id && !invoiceKeys.has(r.card_id)) {
+      invoiceKeys.add(r.card_id);
       const ref = invoiceRefForMonth(ry, rm0, { closingDay, dueDay });
-      await db.from("invoices").upsert(
-        {
-          user_id: userId,
-          card_id: r.card_id,
-          reference_month: ref.referenceMonth,
-          closing_date: ref.closingDate,
-          due_date: ref.dueDate,
-          status: "open",
-        },
-        { onConflict: "card_id,reference_month", ignoreDuplicates: true },
-      );
+      invoices.push({
+        card_id: r.card_id,
+        reference_month: ref.referenceMonth,
+        closing_date: ref.closingDate,
+        due_date: ref.dueDate,
+      });
     }
-    created++;
   }
-  return created;
+
+  if (!transactions.length) return 0;
+
+  const { error } = await db.rpc("materialize_recurring_atomic", {
+    p_user_id: userId,
+    p_transactions: transactions,
+    p_installments: installments,
+    p_invoices: invoices,
+  });
+  if (error) {
+    console.error("[recurring] falha ao materializar:", error.code);
+    return 0;
+  }
+  return transactions.length;
 }
 
 /**
