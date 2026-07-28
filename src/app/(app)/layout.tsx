@@ -1,12 +1,11 @@
 import { redirect } from "next/navigation";
 import { BottomNav } from "@/components/bottom-nav";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionUser } from "@/lib/auth";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Deduplicado por request: as páginas que também precisam do usuário reusam
+  // esta mesma resposta em vez de fazer outra ida ao auth server.
+  const user = await getSessionUser();
 
   // Reforço além do middleware (defense-in-depth).
   if (!user) redirect("/login");

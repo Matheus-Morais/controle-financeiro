@@ -241,6 +241,30 @@ export type Database = {
         };
         Returns: number;
       };
+      /**
+       * Assinaturas ainda NÃO materializadas nas competências pedidas, já com o
+       * ciclo do cartão embutido. Substitui a cadeia
+       * `recurring_expenses → cards → transactions → installments` por uma única
+       * ida ao banco; as datas continuam sendo calculadas em `lib/invoice.ts`.
+       * Recebe `p_user_id` pelo mesmo motivo da `materialize_recurring_atomic`.
+       */
+      pending_recurring_expenses: {
+        Args: { p_user_id: string; p_ref_months: string[] };
+        Returns: {
+          reference_month: string;
+          recurring_id: string;
+          card_id: string | null;
+          account_id: string | null;
+          category_id: string | null;
+          description: string;
+          amount_cents: number;
+          billing_day: number;
+          /** Null quando a assinatura não tem cartão (conta fixa). */
+          closing_day: number | null;
+          due_day: number | null;
+        }[];
+      };
+
     };
     Enums: {
       account_type: AccountType;

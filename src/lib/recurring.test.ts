@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { createFakeDB, type FakeDB } from "./fake-supabase";
-import { materializeRecurringExpenses, materializeRecurringIncomes } from "./recurring";
+import {
+  materializeRecurringExpenses,
+  materializeRecurringIncomes,
+  materializeRecurringMonths,
+} from "./recurring";
 
 /**
  * A materialização é a lógica assíncrona mais crítica do domínio (RN-24, RN-29)
@@ -128,9 +132,14 @@ describe("materializeRecurringExpenses", () => {
     const created = await materializeRecurringExpenses(asDB(db), USER, AGO);
 
     expect(created).toBe(2);
+    // Uma leitura + uma gravação, e nada mais: a cadeia de selects
+    // (recurring_expenses → cards → transactions → installments) virou a RPC da
+    // migration 0017, e a escrita segue atômica numa chamada só.
     expect(db.queries.filter((q) => q.startsWith("rpc:"))).toEqual([
+      "rpc:pending_recurring_expenses",
       "rpc:materialize_recurring_atomic",
     ]);
+    expect(db.queries.filter((q) => q.endsWith(":select"))).toEqual([]);
     expect(db.tables.transactions).toHaveLength(2);
     expect(db.tables.installments).toHaveLength(2);
     // Uma capa por (cartão, competência): as duas assinaturas dividem a fatura.
@@ -138,14 +147,41 @@ describe("materializeRecurringExpenses", () => {
   });
 
   it("não deixa transação sem parcela quando a gravação falha", async () => {
+    // Só a ESCRITA falha; a leitura das pendentes segue real, senão o teste
+    // passaria por não ter nada a materializar em vez de por atomicidade.
     const boom = {
       ...db,
-      rpc: () => Promise.resolve({ data: null, error: { code: "23503" } }),
+      rpc: (fn: string, args: Record<string, unknown>) =>
+        fn === "materialize_recurring_atomic"
+          ? Promise.resolve({ data: null, error: { code: "23503" } })
+          : db.rpc(fn, args),
     } as unknown as Parameters<typeof materializeRecurringExpenses>[0];
 
     expect(await materializeRecurringExpenses(boom, USER, AGO)).toBe(0);
     expect(db.tables.transactions).toHaveLength(0);
     expect(db.tables.installments).toHaveLength(0);
+  });
+
+  it("materializa vários meses numa única ida ao banco (era 4 selects por mês)", async () => {
+    const created = await materializeRecurringMonths(asDB(db), USER, [JUL, AGO]);
+
+    expect(created).toBe(2);
+    expect(db.queries.filter((q) => q.startsWith("rpc:"))).toEqual([
+      "rpc:pending_recurring_expenses",
+      "rpc:materialize_recurring_atomic",
+    ]);
+    expect(db.tables.installments.map((i) => i.reference_month).sort()).toEqual([JUL, AGO]);
+    // Uma capa por (cartão, competência) — o mesmo cartão em dois meses são duas.
+    expect(db.tables.invoices).toHaveLength(2);
+  });
+
+  it("nada pendente custa uma única ida ao banco", async () => {
+    await materializeRecurringMonths(asDB(db), USER, [JUL, AGO]);
+    db.queries.length = 0;
+
+    expect(await materializeRecurringMonths(asDB(db), USER, [JUL, AGO])).toBe(0);
+    // O caso comum no render das telas: nem a gravação é chamada.
+    expect(db.queries).toEqual(["rpc:pending_recurring_expenses"]);
   });
 });
 

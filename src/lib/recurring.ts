@@ -42,97 +42,61 @@ type MaterializedInvoice = {
 };
 
 /**
- * Quais destas assinaturas já têm ocorrência lançada na competência. Duas idas ao
- * banco no total (em vez de uma por assinatura): as transações das assinaturas e
- * as parcelas dessas transações na competência.
+ * Materializa (idempotentemente) os gastos recorrentes ativos de um usuário nas
+ * competências `refMonths` (`YYYY-MM-01`): cria transação + parcela única +
+ * capa de fatura. Chamado no render das telas que mostram um mês, na criação da
+ * assinatura e no cron do dia 1.
  *
- * Parcela com soft-delete CONTA como lançada — o usuário excluiu a ocorrência do
- * mês de propósito; recriá-la no próximo tick seria ressuscitar o que ele apagou.
+ * DUAS idas ao banco no total, independentemente de quantos meses e assinaturas:
+ *
+ *  1. `pending_recurring_expenses` devolve só o que falta materializar, já com o
+ *     ciclo do cartão. Antes eram quatro selects em série POR MÊS
+ *     (`recurring_expenses → cards → transactions → installments`), pagos mesmo
+ *     quando não havia nada a fazer — e as telas chamam isto para dois meses.
+ *  2. `materialize_recurring_atomic` grava o lote inteiro numa transação do
+ *     Postgres, e só é chamada quando há algo a gravar (o caso comum é não ter).
+ *
+ * As DATAS continuam sendo calculadas aqui, por `lib/invoice.ts` puro e testado:
+ * a RPC filtra e junta, não decide competência (ver a migration 0017).
+ *
+ * A idempotência é POR COMPETÊNCIA (RN-24): uma assinatura já está lançada no mês
+ * quando tem parcela em `refMonth` — não quando tem transação com `purchase_date`
+ * no mês. A diferença importa para as ocorrências vindas de importação de fatura,
+ * cuja data de compra é a impressa no PDF e pode cair no mês anterior.
  */
-async function materializedRecurringIds(
+export async function materializeRecurringMonths(
   db: DB,
-  recurringIds: string[],
-  refMonth: string,
-): Promise<Set<string>> {
-  if (!recurringIds.length) return new Set();
+  userId: string,
+  refMonths: string[],
+): Promise<number> {
+  const months = [...new Set(refMonths)];
+  if (!months.length) return 0;
 
-  const { data: txs } = await db
-    .from("transactions")
-    .select("id, recurring_id")
-    .in("recurring_id", recurringIds);
-  if (!txs?.length) return new Set();
-
-  const recurringByTx = new Map(txs.map((t) => [t.id, t.recurring_id]));
-  const { data: insts } = await db
-    .from("installments")
-    .select("transaction_id")
-    .eq("reference_month", refMonth)
-    .in(
-      "transaction_id",
-      txs.map((t) => t.id),
-    );
-
-  const ids = new Set<string>();
-  for (const i of insts ?? []) {
-    const recId = recurringByTx.get(i.transaction_id);
-    if (recId) ids.add(recId);
+  const { data: pending, error: readError } = await db.rpc("pending_recurring_expenses", {
+    p_user_id: userId,
+    p_ref_months: months,
+  });
+  if (readError) {
+    console.error("[recurring] falha ao ler pendentes:", readError.code);
+    return 0;
   }
-  return ids;
-}
+  if (!pending?.length) return 0;
 
-/**
- * Materializa (idempotentemente) os gastos recorrentes ativos de um usuário no
- * mês `refMonth` (`YYYY-MM-01`): cria a transação + parcela única + fatura.
- * Chamado na criação (mês corrente) e no cron do dia 1 (novo mês).
- *
- * O lote inteiro é gravado por `materialize_recurring_atomic` — uma transação no
- * Postgres. Antes eram três inserts soltos POR ASSINATURA: uma falha no meio
- * deixava a transação sem parcela (invisível em fatura e relatório) e, como a
- * idempotência olha a parcela na competência (RN-24), o tick seguinte criava
- * outra órfã, sem nunca convergir.
- */
-export async function materializeRecurringExpenses(db: DB, userId: string, refMonth: string) {
-  const { data: recurrings } = await db
-    .from("recurring_expenses")
-    .select("id, card_id, account_id, category_id, description, amount_cents, billing_day")
-    .eq("user_id", userId)
-    .eq("active", true)
-    .lte("start_month", refMonth)
-    .or(`end_month.is.null,end_month.gte.${refMonth}`);
-
-  if (!recurrings?.length) return 0;
-
-  // Cartões referenciados, para o dia de fechamento.
-  const cardIds = [...new Set(recurrings.map((r) => r.card_id).filter(Boolean))] as string[];
-  const { data: cards } = cardIds.length
-    ? await db.from("cards").select("id, closing_day, due_day").in("id", cardIds)
-    : { data: [] };
-  const cardById = new Map((cards ?? []).map((c) => [c.id, c]));
-
-  // Idempotência POR COMPETÊNCIA: uma assinatura já está lançada no mês quando
-  // tem parcela em `refMonth` — não quando tem transação com `purchase_date` no
-  // mês. A diferença importa para as ocorrências vindas de importação de fatura,
-  // cuja data de compra é a impressa no PDF e pode cair no mês anterior.
-  const materialized = await materializedRecurringIds(
-    db,
-    recurrings.map((r) => r.id),
-    refMonth,
-  );
-
-  const [ry, rm0] = ymd(refMonth);
   const transactions: MaterializedTransaction[] = [];
   const installments: MaterializedInstallment[] = [];
   const invoices: MaterializedInvoice[] = [];
-  // Cartões que já têm capa no lote (a competência é a mesma para todos: refMonth).
+  // Capas já enfileiradas, por (cartão, competência) — agora o lote pode cobrir
+  // mais de um mês, então o cartão sozinho não identifica mais a fatura.
   const invoiceKeys = new Set<string>();
 
-  for (const r of recurrings) {
-    if (materialized.has(r.id)) continue;
-
+  for (const r of pending) {
+    const refMonth = r.reference_month;
+    const [ry, rm0] = ymd(refMonth);
     const purchaseDate = toISO(ry, rm0, clampDay(r.billing_day, ry, rm0));
-    const card = r.card_id ? cardById.get(r.card_id) : null;
-    const closingDay = card?.closing_day ?? ACCOUNT_CLOSING_DAY;
-    const dueDay = card?.due_day ?? ACCOUNT_CLOSING_DAY;
+    // Assinatura sem cartão (conta fixa) não tem ciclo: o fechamento fictício do
+    // dia 31 faz a competência coincidir com o mês da cobrança.
+    const closingDay = r.closing_day ?? ACCOUNT_CLOSING_DAY;
+    const dueDay = r.due_day ?? ACCOUNT_CLOSING_DAY;
 
     // Id pré-gerado: liga parcela↔transação dentro do lote, sem round-trip.
     const txId = randomUUID();
@@ -146,7 +110,7 @@ export async function materializeRecurringExpenses(db: DB, userId: string, refMo
       card_id: r.card_id,
       account_id: r.account_id,
       category_id: r.category_id,
-      recurring_id: r.id,
+      recurring_id: r.recurring_id,
       description: r.description,
       kind: "recurring",
       total_amount_cents: r.amount_cents,
@@ -169,8 +133,9 @@ export async function materializeRecurringExpenses(db: DB, userId: string, refMo
     // Uma capa por (cartão, competência): várias assinaturas do mesmo cartão
     // dividem a mesma fatura. O `on conflict do nothing` da função absorveria a
     // repetição, mas não faz sentido mandá-la.
-    if (r.card_id && !invoiceKeys.has(r.card_id)) {
-      invoiceKeys.add(r.card_id);
+    const invoiceKey = `${r.card_id}|${refMonth}`;
+    if (r.card_id && !invoiceKeys.has(invoiceKey)) {
+      invoiceKeys.add(invoiceKey);
       const ref = invoiceRefForMonth(ry, rm0, { closingDay, dueDay });
       invoices.push({
         card_id: r.card_id,
@@ -180,8 +145,6 @@ export async function materializeRecurringExpenses(db: DB, userId: string, refMo
       });
     }
   }
-
-  if (!transactions.length) return 0;
 
   const { error } = await db.rpc("materialize_recurring_atomic", {
     p_user_id: userId,
@@ -194,6 +157,11 @@ export async function materializeRecurringExpenses(db: DB, userId: string, refMo
     return 0;
   }
   return transactions.length;
+}
+
+/** Açúcar de um mês só — o caso do cron e das actions de assinatura. */
+export async function materializeRecurringExpenses(db: DB, userId: string, refMonth: string) {
+  return materializeRecurringMonths(db, userId, [refMonth]);
 }
 
 /**
