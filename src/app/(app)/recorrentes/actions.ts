@@ -121,12 +121,39 @@ export async function changeRecurringCard(
   }
 
   // Remove as ocorrências já materializadas na origem antiga a partir do corte
-  // (ex.: meses futuros criados ao navegar). O cascade da FK apaga as parcelas.
-  await supabase
+  // (ex.: meses futuros criados ao navegar).
+  //
+  // O escopo é a COMPETÊNCIA da parcela, nunca a `purchase_date` (RN-24): uma
+  // ocorrência vinda de fatura importada carrega a data impressa no PDF, que
+  // costuma cair no mês anterior. Cortando por data de compra, ela sobrevivia no
+  // cartão antigo — e como a materialização vê o mês como já lançado, o cartão
+  // novo também não recebia nada: a troca simplesmente não acontecia no mês.
+  const { data: siblings } = await supabase
     .from("transactions")
-    .delete()
-    .eq("recurring_id", recurringId)
-    .gte("purchase_date", cutover);
+    .select("id")
+    .eq("recurring_id", recurringId);
+  const siblingIds = (siblings ?? []).map((s) => s.id);
+
+  if (siblingIds.length) {
+    await supabase
+      .from("installments")
+      .delete()
+      .in("transaction_id", siblingIds)
+      .gte("reference_month", cutover);
+
+    // A transação só é apagada quando ficou sem nenhuma parcela. Se ainda tem
+    // parcela em competência anterior ao corte, ela permanece no cartão antigo —
+    // histórico preservado (RN-09).
+    const { data: alive } = await supabase
+      .from("installments")
+      .select("transaction_id")
+      .in("transaction_id", siblingIds);
+    const stillUsed = new Set((alive ?? []).map((i) => i.transaction_id));
+    const orphans = siblingIds.filter((id) => !stillUsed.has(id));
+    if (orphans.length) {
+      await supabase.from("transactions").delete().in("id", orphans);
+    }
+  }
 
   // Passa o template para o novo cartão. Daqui pra frente as materializações caem
   // no cartão novo; as competências anteriores seguem no cartão antigo.
@@ -201,7 +228,7 @@ export async function criarRecorrenteDeTransacao(
 
   const { data: tx } = await supabase
     .from("transactions")
-    .select("description, total_amount_cents, card_id, account_id, category_id")
+    .select("description, total_amount_cents, installments_count, card_id, account_id, category_id")
     .eq("id", transactionId)
     .eq("user_id", user.id)
     .single();
@@ -211,13 +238,18 @@ export async function criarRecorrenteDeTransacao(
   if (billingDay < 1 || billingDay > 31) return { error: "Dia de cobrança inválido." };
   if (!/^\d{4}-\d{2}$/.test(startMonth)) return { error: "Mês de início inválido." };
 
+  // O template é MENSAL: de um parcelado, o que se repete é a PARCELA, não o
+  // total da compra. Hoje o botão só aparece na aba "à vista" (onde os dois
+  // valores coincidem), mas a assinatura não pode depender disso.
+  const monthlyCents = Math.round(tx.total_amount_cents / Math.max(1, tx.installments_count));
+
   const { error } = await supabase.from("recurring_expenses").insert({
     user_id: user.id,
     card_id: tx.card_id,
     account_id: tx.account_id,
     category_id: tx.category_id,
     description: tx.description,
-    amount_cents: tx.total_amount_cents,
+    amount_cents: monthlyCents,
     billing_day: billingDay,
     start_month: `${startMonth}-01`,
     active: true,

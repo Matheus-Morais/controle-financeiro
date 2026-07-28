@@ -126,6 +126,7 @@ describe("matchExistingOccurrence", () => {
     number: 1,
     installmentsCount: 1,
     recurringId: "rec-net",
+    deleted: false,
   };
   // Parcela de um parcelamento importado em julho: a cadeia inteira (1..10) já
   // foi materializada, então a ocorrência vive em OUTRA competência.
@@ -140,6 +141,7 @@ describe("matchExistingOccurrence", () => {
     number: 3,
     installmentsCount: 10,
     recurringId: null,
+    deleted: false,
   };
   const padaria: ExistingOccurrence = {
     transactionId: "tx-pad",
@@ -152,6 +154,7 @@ describe("matchExistingOccurrence", () => {
     number: 1,
     installmentsCount: 1,
     recurringId: null,
+    deleted: false,
   };
   const todas = [netflixDoCron, parcelaPropagada, padaria];
 
@@ -176,6 +179,63 @@ describe("matchExistingOccurrence", () => {
       REF,
     );
     expect(m?.transactionId).toBe("tx-net");
+  });
+
+  it("casa o gasto lançado À MÃO na competência (sem nome bruto)", () => {
+    // Só a importação grava `statement_description`. Sem este nível, quem lança
+    // as compras durante o mês recebia tudo duplicado ao subir a fatura.
+    const manual: ExistingOccurrence = {
+      transactionId: "tx-manual",
+      kind: "single",
+      statementDescription: null,
+      description: "Mercado",
+      amountCents: 8790,
+      purchaseDate: "2026-08-12",
+      referenceMonth: REF,
+      number: 1,
+      installmentsCount: 1,
+      recurringId: null,
+      deleted: false,
+    };
+    const m = matchExistingOccurrence(
+      item({
+        statementDescription: "SUPERMERCADO BOM PRECO",
+        description: "Mercado",
+        amountCents: 8790,
+        purchaseDate: "2026-08-12",
+      }),
+      [...todas, manual],
+      REF,
+    );
+    expect(m?.transactionId).toBe("tx-manual");
+  });
+
+  it("gasto manual de mesmo nome mas outro valor/data continua sendo item novo", () => {
+    const manual: ExistingOccurrence = {
+      transactionId: "tx-manual",
+      kind: "single",
+      statementDescription: null,
+      description: "Mercado",
+      amountCents: 8790,
+      purchaseDate: "2026-08-12",
+      referenceMonth: REF,
+      number: 1,
+      installmentsCount: 1,
+      recurringId: null,
+      deleted: false,
+    };
+    const outroValor = matchExistingOccurrence(
+      item({ statementDescription: "MERCADO", description: "Mercado", amountCents: 5000, purchaseDate: "2026-08-12" }),
+      [manual],
+      REF,
+    );
+    const outraData = matchExistingOccurrence(
+      item({ statementDescription: "MERCADO", description: "Mercado", amountCents: 8790, purchaseDate: "2026-08-20" }),
+      [manual],
+      REF,
+    );
+    expect(outroValor).toBeNull();
+    expect(outraData).toBeNull();
   });
 
   it("casa a parcela pela assinatura, mesmo com o contador e o mês diferentes", () => {
@@ -316,6 +376,7 @@ describe("resolveInvoiceItem", () => {
     number: 1,
     installmentsCount: 1,
     recurringId: "rec-spot",
+    deleted: false,
   };
   const template = (materialized: boolean): ExistingRecurring => ({
     id: "rec-spot",
@@ -366,6 +427,7 @@ describe("classifyReviewItem", () => {
     number: 1,
     installmentsCount: 1,
     recurringId: null,
+    deleted: false,
     ...over,
   });
 
@@ -503,6 +565,10 @@ describe("buildImportRows", () => {
       kind: "installment",
       installments_count: 4,
       description: "Amazon Marketplace",
+      // `total_amount_cents` é o TOTAL da compra, igual ao lançamento manual: a
+      // fatura mostra o valor da PARCELA (5000). Guardar a parcela aqui fazia a
+      // tela de edição dividi-la de novo por 4 ao salvar (RN-04).
+      total_amount_cents: 20000,
     });
     expect(installments).toHaveLength(4);
     expect(installments.map((i) => [i.number, i.reference_month])).toEqual([
@@ -534,7 +600,7 @@ describe("buildImportRows", () => {
         recurringId: null,
       },
     ];
-    const { installments } = buildImportRows(parc, ctx);
+    const { transactions, installments } = buildImportRows(parc, ctx);
     // Não cria as anteriores (1 e 2); começa na 3, na competência forçada.
     expect(installments).toHaveLength(8);
     expect(installments[0]).toMatchObject({ number: 3, reference_month: "2026-07-01" });
@@ -542,6 +608,10 @@ describe("buildImportRows", () => {
       number: 10,
       reference_month: "2027-02-01",
     });
+    // O total é o da compra inteira (10 × 20000), mesmo com só 8 parcelas
+    // gravadas — as duas primeiras vivem em faturas passadas.
+    expect(transactions[0].total_amount_cents).toBe(200000);
+    expect(installments.every((i) => i.amount_cents === 20000)).toBe(true);
   });
 
   it("item marcado como recorrente nasce 'recurring' com recurring_id na competência forçada", () => {

@@ -8,6 +8,7 @@ import { shiftReferenceMonth } from "@/lib/date";
 import {
   buildImportRows,
   importPayloadSchema,
+  normalizeText,
   type ExistingOccurrence,
   type ExistingRecurring,
   type ValidatedImportItem,
@@ -56,6 +57,11 @@ export async function importarGastosDaFatura(
   // Ids das assinaturas CRIADAS agora (as vinculadas a template existente ficam
   // de fora — senão o insert abaixo duplicaria a assinatura).
   const newRecurringIds = new Set<string>();
+  // Nome normalizado → id da assinatura criada NESTE lote. Duas linhas do mesmo
+  // estabelecimento marcadas como recorrentes (cobrança dividida, reajuste no
+  // meio do mês) são a mesma assinatura; sem isto nasciam dois templates
+  // concorrentes, cada um materializando a própria ocorrência todo mês.
+  const newRecurringByName = new Map<string, string>();
   for (const it of items) {
     const amountCents = parseBRLToCents(it.valor_brl);
     if (amountCents == null || amountCents <= 0) {
@@ -68,8 +74,13 @@ export async function importarGastosDaFatura(
     // template (nada de duplicar); só id do próprio usuário é aceito.
     const linkedId =
       it.recurring_id && ownRecurrings.has(it.recurring_id) ? it.recurring_id : null;
-    const recurringId = linkedId ?? (it.mark_as_recurring ? randomUUID() : null);
-    if (recurringId && !linkedId) newRecurringIds.add(recurringId);
+    let recurringId = linkedId;
+    if (!recurringId && it.mark_as_recurring) {
+      const nameKey = normalizeText(it.description);
+      recurringId = newRecurringByName.get(nameKey) ?? randomUUID();
+      newRecurringByName.set(nameKey, recurringId);
+      newRecurringIds.add(recurringId);
+    }
     // Só vira parcela se os números fizerem sentido (2+ parcelas, atual no intervalo).
     const p = it.parcela;
     const installment =
@@ -101,8 +112,17 @@ export async function importarGastosDaFatura(
   // O template começa no mês SEGUINTE — esta fatura já traz a ocorrência do mês
   // corrente (criada aqui como `recurring`); o cron materializa daí em diante,
   // sem risco de duplicar a competência importada.
+  // Um template por id: itens que compartilham a assinatura do lote entram uma
+  // vez só (o id é PK — repetir explodiria a gravação inteira).
+  const emitted = new Set<string>();
   const recurringRows = validated
-    .filter((v) => v.recurringId && newRecurringIds.has(v.recurringId))
+    .filter((v) => {
+      if (!v.recurringId || !newRecurringIds.has(v.recurringId) || emitted.has(v.recurringId)) {
+        return false;
+      }
+      emitted.add(v.recurringId);
+      return true;
+    })
     .map((v) => ({
       id: v.recurringId as string,
       user_id: user.id,
@@ -142,10 +162,12 @@ export async function importarGastosDaFatura(
 /**
  * O que o cartão JÁ tem, para a revisão saber o que é novo. Duas partes:
  *
- * - `occurrences`: cada parcela viva do cartão (TODOS os meses) com os dados da
- *   sua transação. É o cartão inteiro, e não só a competência, porque as parcelas
+ * - `occurrences`: cada parcela do cartão (TODOS os meses) com os dados da sua
+ *   transação. É o cartão inteiro, e não só a competência, porque as parcelas
  *   futuras de um parcelamento já foram materializadas em competências seguintes
- *   — sem isso, subir a fatura do mês seguinte recriaria a cadeia toda.
+ *   — sem isso, subir a fatura do mês seguinte recriaria a cadeia toda. As
+ *   parcelas com soft-delete entram também: excluída conta como lançada, a mesma
+ *   política da materialização (RN-24).
  * - `recurrings`: as assinaturas ativas do cartão vigentes na competência, com os
  *   apelidos que já apareceram em faturas (para casar o nome bruto do PDF) e se
  *   já estão lançadas no mês.
@@ -167,13 +189,12 @@ export async function getExistingInvoiceContext(
   } = await supabase.auth.getUser();
   if (!user) return empty;
 
-  // Parcelas vivas do cartão inteiro + assinaturas vigentes na competência.
+  // Parcelas do cartão inteiro (inclusive excluídas) + assinaturas vigentes.
   const [{ data: installments }, { data: templates }] = await Promise.all([
     supabase
       .from("installments")
-      .select("amount_cents, number, transaction_id, reference_month")
-      .eq("card_id", cardId)
-      .is("deleted_at", null),
+      .select("amount_cents, number, transaction_id, reference_month, deleted_at")
+      .eq("card_id", cardId),
     supabase
       .from("recurring_expenses")
       .select("id, description, amount_cents")
@@ -207,6 +228,7 @@ export async function getExistingInvoiceContext(
       number: inst.number,
       installmentsCount: tx.installments_count,
       recurringId: tx.recurring_id,
+      deleted: inst.deleted_at != null,
     });
   }
 

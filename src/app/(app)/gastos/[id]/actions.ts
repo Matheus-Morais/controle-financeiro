@@ -21,6 +21,11 @@ type ActionState = { error?: string } | undefined;
  * `deleted_at` (soft-delete) das parcelas antigas, e devolve quantas
  * competências PAGAS deixaram de existir no novo cronograma — encurtar um
  * parcelamento apagava esse registro sem aviso.
+ *
+ * Gasto que começa no MEIO do parcelamento (importado como "3/10", RN-42) é
+ * regenerado a partir da própria âncora: mantém o número da primeira parcela e
+ * a competência dela. Sem isso, editar recriava as parcelas 1 e 2 em faturas
+ * passadas e deslocava todo o resto (RN-09).
  */
 export async function updateExpense(
   id: string,
@@ -49,6 +54,18 @@ export async function updateExpense(
     return { error: "Gastos recorrentes são editados na tela de recorrentes." };
   }
 
+  // Âncora do cronograma atual: número e competência da PRIMEIRA parcela viva
+  // ou não. Para um gasto lançado no app é sempre (1, fatura da compra) — e aí
+  // nada muda. Para um importado no meio ("3/10") é (3, competência da fatura),
+  // e é isso que impede a regeneração de recriar as parcelas passadas.
+  const { data: current } = await supabase
+    .from("installments")
+    .select("number, reference_month")
+    .eq("transaction_id", id)
+    .order("number")
+    .limit(1);
+  const anchor = current?.[0] ?? null;
+
   const source = parseSource(e.source);
   const count = e.kind === "single" ? 1 : e.installments_count;
 
@@ -71,11 +88,18 @@ export async function updateExpense(
   const categoryId = await assertOwned(supabase, "categories", e.category_id || null);
   if (e.category_id && !categoryId) return { error: "Categoria não encontrada." };
 
+  // Só ancora quando o gasto de fato começa no meio: assim o caminho normal
+  // (parcela 1) continua livre para mover a competência se o usuário corrigir a
+  // data da compra. Parcelamento encurtado abaixo do início perde a âncora — o
+  // cronograma 3..2 não existe — e é regerado do zero.
+  const useAnchor = anchor != null && anchor.number > 1 && anchor.number <= count;
   const parcels = generateInstallments({
     totalAmountCents: e.amount_cents,
     count,
     purchaseDate: e.purchase_date,
     closingDay,
+    firstNumber: useAnchor ? anchor.number : 1,
+    anchorMonth: useAnchor ? anchor.reference_month : undefined,
   });
 
   const purchaseDay = ymd(e.purchase_date)[2];

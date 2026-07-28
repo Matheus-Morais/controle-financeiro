@@ -106,5 +106,10 @@ export async function createExpense(_prev: ActionState, formData: FormData): Pro
   }
 
   revalidatePath("/", "layout");
-  redirect(source.kind === "card" ? `/cartoes/${source.id}` : "/contas");
+  // Leva à competência em que o gasto CAIU: comprado depois do fechamento, ele
+  // entra na fatura seguinte, e sem o `?mes` o usuário aterrissava num mês onde
+  // o lançamento não aparece (a tela do cartão abre na próxima fatura em aberto).
+  redirect(
+    source.kind === "card" ? `/cartoes/${source.id}?mes=${parcels[0].referenceMonth}` : "/contas",
+  );
 }

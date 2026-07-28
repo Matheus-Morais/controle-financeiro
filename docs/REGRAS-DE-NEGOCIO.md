@@ -38,7 +38,7 @@ Regras que **nunca** podem ser violadas. Qualquer código que as quebre é bug, 
 | **RN-01** | Dinheiro é **inteiro em centavos**. Nunca float. | Colunas `*_cents` (bigint); conversão só via [`money.ts`](../src/lib/money.ts) |
 | **RN-02** | Competência é **sempre o 1º dia do mês** (`YYYY-MM-01`). | Colunas `reference_month` (date) + `toISO(y, m, 1)` |
 | **RN-03** | Um gasto tem **exatamente uma origem**: cartão XOR conta. | `check ((card_id is null) <> (account_id is null))` em `transactions` e `recurring_expenses` |
-| **RN-04** | A soma das parcelas é **exatamente** igual ao total da compra. | `generateInstallments` distribui a sobra 1 centavo por vez nas primeiras parcelas |
+| **RN-04** | `transactions.total_amount_cents` é o **total da compra** em todos os fluxos, e a soma das parcelas é **exatamente** igual a ele. | `generateInstallments` (ponto único do cronograma) distribui a sobra 1 centavo por vez nas primeiras parcelas; a importação multiplica o valor da parcela impressa pelo total de parcelas |
 | **RN-05** | A lógica de datas de fatura é **pura e determinística** — sem `Date.now()`, sem timezone do ambiente. | [`invoice.ts`](../src/lib/invoice.ts), [`installments.ts`](../src/lib/installments.ts) |
 | **RN-06** | **RLS é a barreira de segurança.** Todo acesso de usuário passa pelo client com sessão. | `createClient()`; `createServiceClient()` só no cron |
 | **RN-07** | Relatórios ([`reports.ts`](../src/lib/reports.ts)) **sempre** recebem o client do usuário, nunca o service. | Assinatura `(db: DB, ...)` — o caller injeta |
@@ -115,6 +115,11 @@ por vez nas primeiras parcelas** — garantindo RN-04.
 
 > Ex.: R$ 100,00 em 3× → `33,34 + 33,33 + 33,33`.
 
+O cronograma pode começar numa parcela diferente da 1ª e numa competência **ancorada** (a fatura
+importada que já está em "3/10", RN-42; a edição de um gasto assim, RN-19). O rateio da sobra é
+sempre calculado sobre o cronograma **completo** (1..N): uma parcela vale o mesmo esteja ela sendo
+criada do zero ou retomada no meio. Lançar, editar e importar usam a **mesma** função.
+
 ### RN-18 — Limites
 - `installments_count` entre **1 e 72**. `kind = "installment"` exige ≥ 2.
 - `amount_cents` deve ser **positivo** (> 0).
@@ -125,6 +130,12 @@ Editar regenera **todas** as parcelas a partir dos novos dados, preservando **po
 status `paid` **e** o `deleted_at` (soft-delete, RN-20) das parcelas antigas. Faturas já pagas
 **não são reabertas** (`on conflict do nothing`).
 Gastos `recurring` **não** são editáveis por essa tela — assinatura se edita em `/recorrentes`.
+
+Um gasto que começa no **meio** do parcelamento (importado como "3/10", RN-42) é regenerado a partir
+da própria **âncora**: mantém o número da primeira parcela gravada e a competência dela. Sem isso, a
+regeneração recriava as parcelas 1–2 em faturas passadas e deslocava todo o resto (RN-09). No caminho
+normal (parcela 1) a competência continua saindo da data da compra, para que corrigir a data mova o
+gasto de fatura.
 
 Toda a regeneração roda dentro de `update_expense_atomic` (uma transação no Postgres): sem isso, o
 `delete` das parcelas antigas acontecia fora de qualquer transação e uma falha no `insert` seguinte
@@ -173,14 +184,22 @@ quando existe transação com `purchase_date` naquele mês. A distinção import
 de importação de fatura, cuja data de compra é a impressa no PDF e pode cair no mês anterior.
 
 **Parcela com soft-delete conta como lançada.** O usuário excluiu a ocorrência do mês de propósito;
-recriá-la no próximo tick seria ressuscitar o que ele apagou.
+recriá-la no próximo tick seria ressuscitar o que ele apagou. A dedupe da importação segue a **mesma**
+política (RN-41) — a fatura seguinte não reoferece o que foi excluído.
+
+A materialização de um mês grava o lote inteiro numa transação (`materialize_recurring_atomic`).
+Encadear os inserts soltos deixava a transação **sem parcela** quando algo falhava no meio: invisível
+em fatura e relatório e, como a idempotência olha a parcela na competência, o tick seguinte criava
+outra órfã — sem nunca convergir.
 
 ### RN-25 — Quando a materialização acontece
 | Gatilho | Escopo |
 |---|---|
 | Criação da assinatura | mês corrente |
 | Cron do dia 1 | novo mês |
-| Abertura da tela do cartão / contas / dashboard | mês navegado (fallback preguiçoso) |
+| Abertura da tela do cartão | mês navegado (fallback preguiçoso) |
+| Abertura da lista de cartões / dashboard | mês exibido **e** o seguinte |
+| Abertura de contas | mês exibido e o anterior |
 | Troca de cartão | mês do corte |
 
 ### RN-26 — Troca de cartão de uma assinatura
@@ -192,6 +211,12 @@ Corte de ciclo, decidido pela pergunta "o mês atual já foi cobrado no cartão 
 | **Não** | mês atual | Ocorrência do mês atual é removida do cartão antigo e recriada no novo. |
 
 Competências anteriores ao corte **permanecem no cartão antigo** — histórico preservado (RN-09).
+
+O corte é aplicado pela **competência da parcela**, nunca pela `purchase_date` (RN-24): a ocorrência
+vinda de fatura importada carrega a data impressa no PDF, que costuma cair no mês anterior. Cortando
+por data de compra ela sobrevivia no cartão antigo — e, como a materialização via o mês como já
+lançado, o cartão novo também não recebia nada. Uma transação só é apagada quando fica **sem nenhuma
+parcela**.
 
 ---
 
@@ -294,6 +319,9 @@ A soma dos lançamentos extraídos deve bater com o **total impresso** da fatura
 ### RN-41 — Deduplicação (3 níveis, em ordem de confiança)
 1. **Chave exata** — `nome bruto + valor + data`, **na competência importada**. Cobre o reimport do
    mesmo PDF.
+1b. **Lançamento manual** — ocorrência **sem nome bruto** na competência, com mesmo valor, mesma data
+   de compra e nome que bate. Só a importação grava `statement_description`; sem este nível, o gasto
+   que o usuário lançou à mão durante o mês voltava **duplicado** quando ele subia a fatura.
 2. **Parcelado** — mesma assinatura `nome-sem-contador + valor da parcela + total de parcelas`, em
    **qualquer mês do cartão**. Cobre subir a fatura do mês seguinte: as parcelas futuras já foram
    materializadas em competências posteriores.
@@ -301,19 +329,28 @@ A soma dos lançamentos extraídos deve bater com o **total impresso** da fatura
    amigável, nome bruto ou *apelido* já visto em faturas anteriores). Valor e data **não** entram:
    assinatura reajusta, e a data materializada pelo cron é o `billing_day`, não a data do PDF.
 
-O nome usado na dedupe é sempre o **bruto** (`statement_description`), nunca o amigável — que o
-usuário pode editar.
+O nome usado na dedupe é sempre o **bruto** (`statement_description`) quando existe, nunca o amigável
+— que o usuário pode editar.
+
+A comparação enxerga também as parcelas com **soft-delete**: excluída conta como lançada, a mesma
+política da materialização (RN-24). O item aparece em "Já importados" com o selo *excluído neste mês*
+e o usuário pode remarcá-lo se quiser.
 
 ### RN-42 — Propagação de parcelas na importação
 Um item `3/10` cria a parcela 3 na competência forçada e **propaga as parcelas 4–10** para as
 competências seguintes. As parcelas 1–2 **não** são criadas: pertencem a faturas passadas.
+
+A fatura imprime o valor da **parcela**; `total_amount_cents` guarda o **total da compra** (parcela ×
+total de parcelas), como em qualquer outro fluxo (RN-04). Guardar a parcela ali fazia a tela de edição
+tratá-la como total e dividi-la de novo pelo número de parcelas ao salvar.
 
 ### RN-43 — Item marcado como recorrente
 Vira um template + uma transação `kind = "recurring"` na própria fatura. **Recorrência vence parcela**
 (assinatura não é parcelamento). O template começa no **mês seguinte** — a fatura importada já traz a
 ocorrência do mês corrente, e o cron materializa daí em diante sem duplicar.
 Se a revisão casar o item com uma assinatura **já cadastrada**, reaproveita esse template em vez de
-criar um duplicado.
+criar um duplicado. Dentro do **mesmo lote**, itens marcados como recorrentes que compartilham o nome
+viram **um** template só — senão nasciam dois, cada um materializando a própria ocorrência todo mês.
 
 ### RN-44 — Isolamento referencial (todos os fluxos)
 Todo id de FK vindo de um payload (`card_id`, `account_id`, `category_id`, `recurring_id`) é validado
@@ -323,8 +360,10 @@ Três camadas, todas ativas:
 1. **Server Action** — [`ownership.ts`](../src/lib/ownership.ts) (`assertOwned`), nos fluxos que não
    passam por uma função atômica (criar assinatura, lançar/editar gasto).
 2. **Função Postgres** — `assert_owned_refs` roda dentro de `create_expense_atomic`,
-   `update_expense_atomic` e `import_invoice_atomic`; elas também **ignoram** o `user_id` enviado
-   pelo client e usam `auth.uid()`.
+   `update_expense_atomic`, `import_invoice_atomic` e `materialize_recurring_atomic`, tanto sobre os
+   ids da transação quanto sobre os das **parcelas**. As três primeiras **ignoram** o `user_id`
+   enviado pelo client e usam `auth.uid()`; a de materialização recebe `p_user_id` porque o cron roda
+   sem sessão (service client) e, quando há sessão, exige que seja o próprio usuário.
 3. **Banco** — FKs **compostas** `(fk_id, user_id) → (id, user_id)` (migration 0011): o vínculo
    cross-tenant é impossível, independentemente do código da aplicação.
 
@@ -439,9 +478,9 @@ Cada uma tem hoje uma defesa própria — a RLS sozinha não resolveria nenhuma:
   categoria de outro usuário — a policy só olha o `user_id` da linha inserida. Coberto pelas três
   camadas de RN-44 (validação na action, na função Postgres e FK composta no banco).
 - **Atomicidade.** Sequências de `insert` em várias tabelas via PostgREST não são uma transação. Os
-  três fluxos de gravação (lançar, editar, importar) passam por funções Postgres `security invoker`
-  (migration 0010) — a RLS continua valendo e a função inteira roda numa transação. Mesmo padrão de
-  `reset_account_data()` (RN-52).
+  **quatro** fluxos de gravação de gasto (lançar, editar, importar, materializar assinatura) passam
+  por funções Postgres `security invoker` (migrations 0010 e 0016) — a RLS continua valendo e a
+  função inteira roda numa transação. Mesmo padrão de `reset_account_data()` (RN-52).
 - **Custo e abuso.** A RLS não limita quantas vezes um usuário legítimo chama um endpoint caro.
   Coberto pela quota de RN-55.
 - **Falha silenciosa de mutação.** Sem sessão, `auth.uid()` é null e a RLS simplesmente não afeta

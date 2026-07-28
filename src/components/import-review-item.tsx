@@ -32,6 +32,9 @@ export interface EditableItem {
 
 /** Texto do selo que explica por que o item já existe na competência. */
 function matchLabel(match: ExistingOccurrence): string {
+  // Excluído conta como lançado (RN-24) — mas o selo precisa dizer isso, senão
+  // "já importado" num item que sumiu da fatura parece erro.
+  if (match.deleted) return "excluído neste mês";
   if (match.recurringId) return "assinatura já lançada";
   // A cadeia de parcelas já foi materializada num import anterior; a ocorrência
   // encontrada pode estar em outro mês, então não citamos o número da parcela.

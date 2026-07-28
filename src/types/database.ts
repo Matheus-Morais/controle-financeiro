@@ -227,6 +227,20 @@ export type Database = {
         };
         Returns: number;
       };
+      /**
+       * Materializa o lote de assinaturas de um mês; devolve quantas ocorrências
+       * entraram. Recebe `p_user_id` porque o cron chama sem sessão (service
+       * client) — com sessão, precisa ser o próprio usuário.
+       */
+      materialize_recurring_atomic: {
+        Args: {
+          p_user_id: string;
+          p_transactions: Json;
+          p_installments: Json;
+          p_invoices: Json;
+        };
+        Returns: number;
+      };
     };
     Enums: {
       account_type: AccountType;
