@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CalendarCheck, CalendarClock, ChevronLeft, FileUp, Pencil } from "lucide-react";
+import { CalendarCheck, CalendarClock, FileUp, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { BackLink, HeaderIconLink } from "@/components/back-link";
 import { currentReferenceMonth, formatDayMonth } from "@/lib/date";
 import { sessionTimezone } from "@/lib/user-time";
 import { invoiceRefForMonth, ymd } from "@/lib/invoice";
@@ -159,25 +159,20 @@ export default async function CartaoDetailPage({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        <Link href="/cartoes" className="text-neutral-500">
-          <ChevronLeft />
-        </Link>
+        <BackLink href="/cartoes" label="Voltar para os cartões" />
         <h1 className="min-w-0 flex-1 truncate text-2xl font-bold">{card.name}</h1>
-        <Link
+        <HeaderIconLink
           href={`/gastos/importar?cartao=${id}`}
-          className="text-neutral-500"
-          aria-label="Importar fatura deste cartão"
+          icon={FileUp}
+          label="Importar fatura deste cartão"
           title="Importar fatura (PDF)"
-        >
-          <FileUp size={20} />
-        </Link>
-        <Link
+        />
+        <HeaderIconLink
           href={`/cartoes/${id}/editar`}
-          className="text-neutral-500"
-          aria-label="Editar cartão"
-        >
-          <Pencil size={20} />
-        </Link>
+          icon={Pencil}
+          label="Editar cartão"
+          edge
+        />
       </div>
 
       {notices.map((n) => (

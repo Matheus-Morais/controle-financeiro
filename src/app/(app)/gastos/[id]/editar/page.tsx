@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft } from "lucide-react";
+import { BackLink } from "@/components/back-link";
 import { createClient } from "@/lib/supabase/server";
 import { todayISO } from "@/lib/date";
 import { sessionTimezone } from "@/lib/user-time";
@@ -54,9 +53,7 @@ export default async function EditarGastoPage({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        <Link href={backHref} className="text-neutral-500">
-          <ChevronLeft />
-        </Link>
+        <BackLink href={backHref} />
         <h1 className="text-2xl font-bold">Editar gasto</h1>
       </div>
 
