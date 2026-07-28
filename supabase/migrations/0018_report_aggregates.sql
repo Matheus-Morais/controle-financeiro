@@ -18,11 +18,14 @@
 --
 -- ── Escopo e segurança ────────────────────────────────────────────────────
 -- Todas são `security invoker` e SEM parâmetro de usuário: quem recorta é a RLS
--- do chamador. Por isso o `revoke ... from public` seguido de `grant ... to
--- authenticated`: o Postgres concede EXECUTE a PUBLIC por padrão em função nova,
--- e o service_role (que ignora RLS) passaria a ter um caminho para ler relatório
--- de qualquer usuário. O CLAUDE.md já manda passar sempre o client do usuário
--- para `lib/reports.ts`; aqui isso vira garantia do banco, não convenção.
+-- do chamador.
+--
+-- O `revoke ... from public` abaixo NÃO restringe nada — está mantido só para o
+-- histórico bater com o que foi aplicado. O Supabase concede EXECUTE
+-- explicitamente a `anon`, `authenticated` e `service_role` via default
+-- privileges, e revogar do pseudo-papel PUBLIC não mexe nessas concessões
+-- nominais. A restrição de verdade está na migration 0019, que revoga dos
+-- papéis — leia-a junto com esta.
 -- ============================================================================
 
 -- ── Gasto por categoria na competência ─────────────────────────────────────
