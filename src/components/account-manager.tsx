@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
 import { Plus, Trash2 } from "lucide-react";
+import { Select } from "@/components/select";
 import { Spinner } from "@/components/loader";
 import type { AccountType } from "@/types/database";
 
@@ -75,19 +76,17 @@ function AccountRow({
           onBlur={commitName}
           className="min-w-0 rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm font-medium focus:border-neutral-300 focus:bg-neutral-50 dark:focus:border-neutral-700 dark:focus:bg-neutral-950"
         />
-        <select
+        <Select
+          size="sm"
           value={account.type}
-          onChange={(e) =>
-            startTransition(() => onUpdate(account.id, { type: e.target.value as AccountType }))
+          onChange={(type) =>
+            startTransition(() => onUpdate(account.id, { type: type as AccountType }))
           }
-          className="w-fit rounded-lg border border-neutral-200 bg-transparent px-2 py-0.5 text-xs text-neutral-500 dark:border-neutral-700"
-        >
-          {TYPE_OPTIONS.map((t) => (
-            <option key={t} value={t}>
-              {ACCOUNT_TYPE_LABELS[t]}
-            </option>
-          ))}
-        </select>
+          title="Tipo"
+          ariaLabel={`Tipo de ${account.name}`}
+          className="w-fit text-neutral-500"
+          options={TYPE_OPTIONS.map((t) => ({ value: t, label: ACCOUNT_TYPE_LABELS[t] }))}
+        />
       </div>
       {pending && <span className="text-xs text-neutral-400">salvando…</span>}
       <button
@@ -199,17 +198,14 @@ export function AccountManager({
             placeholder="Ex.: PIX, Conta corrente…"
             className="min-w-0 flex-1 rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
           />
-          <select
+          <Select
             name="type"
             defaultValue="pix"
-            className="rounded-xl border border-neutral-300 bg-white px-2 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-          >
-            {TYPE_OPTIONS.map((t) => (
-              <option key={t} value={t}>
-                {ACCOUNT_TYPE_LABELS[t]}
-              </option>
-            ))}
-          </select>
+            title="Tipo"
+            ariaLabel="Tipo da forma de pagamento"
+            className="shrink-0"
+            options={TYPE_OPTIONS.map((t) => ({ value: t, label: ACCOUNT_TYPE_LABELS[t] }))}
+          />
           <AddButton />
         </form>
       </div>

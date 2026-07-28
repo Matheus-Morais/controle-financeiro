@@ -88,12 +88,7 @@ export function ConfirmCardModal({
 
             <label className="flex flex-col gap-1 text-sm">
               Cartão
-              <CardSelect
-                cards={cards}
-                value={cardId}
-                onChange={onChangeCardId}
-                className={inputClass}
-              />
+              <CardSelect cards={cards} value={cardId} onChange={onChangeCardId} />
             </label>
 
             <button

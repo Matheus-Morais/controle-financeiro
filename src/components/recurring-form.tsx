@@ -1,15 +1,13 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
+import { Select } from "@/components/select";
+import { categoryOptions, sourceOptions, type Option } from "@/components/form-options";
 import { SubmitButton } from "@/components/submit-button";
 import { parseBRLToCents } from "@/lib/money";
 
 type ActionState = { error?: string } | undefined;
 type Action = (prev: ActionState, formData: FormData) => Promise<ActionState>;
-interface Option {
-  id: string;
-  name: string;
-}
 
 export function RecurringForm({
   action,
@@ -58,30 +56,13 @@ export function RecurringForm({
 
       <label className="flex flex-col gap-1 text-sm">
         Cobrado em
-        <select
+        <Select
           name="source"
           defaultValue={defaultSource}
-          className="rounded-xl border border-neutral-300 bg-white px-3 py-3 dark:border-neutral-700 dark:bg-neutral-900"
-        >
-          {cards.length > 0 && (
-            <optgroup label="Cartões">
-              {cards.map((c) => (
-                <option key={c.id} value={`card:${c.id}`}>
-                  {c.name}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {accounts.length > 0 && (
-            <optgroup label="Carteira / conta">
-              {accounts.map((a) => (
-                <option key={a.id} value={`account:${a.id}`}>
-                  {a.name}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
+          title="Cobrado em"
+          ariaLabel="Cobrado em"
+          options={sourceOptions(cards, accounts)}
+        />
       </label>
 
       <div className="grid grid-cols-2 gap-3">
@@ -111,18 +92,13 @@ export function RecurringForm({
 
       <label className="flex flex-col gap-1 text-sm">
         Categoria (opcional)
-        <select
+        <Select
           name="category_id"
           defaultValue=""
-          className="rounded-xl border border-neutral-300 bg-white px-3 py-3 dark:border-neutral-700 dark:bg-neutral-900"
-        >
-          <option value="">Sem categoria</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+          title="Categoria"
+          ariaLabel="Categoria"
+          options={categoryOptions(categories)}
+        />
       </label>
 
       {state?.error && <p className="text-sm text-red-600">{state.error}</p>}

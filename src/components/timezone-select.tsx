@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Globe } from "lucide-react";
+import { Select } from "@/components/select";
 import { Spinner } from "@/components/loader";
 import { saveTimezone } from "@/app/(app)/config/actions";
 
@@ -25,20 +26,16 @@ export function TimezoneSelect({ initial }: { initial: string }) {
         <h2 className="font-semibold">Fuso horário</h2>
       </div>
       <p className="text-xs text-neutral-500">Define o horário dos lembretes.</p>
-      <select
+      <Select
         value={tz}
-        onChange={(e) => {
-          setTz(e.target.value);
-          startTransition(() => void saveTimezone(e.target.value));
+        onChange={(next) => {
+          setTz(next);
+          startTransition(() => void saveTimezone(next));
         }}
-        className="rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm dark:border-neutral-700 dark:bg-neutral-950"
-      >
-        {ZONES.map((z) => (
-          <option key={z.tz} value={z.tz}>
-            {z.label}
-          </option>
-        ))}
-      </select>
+        title="Fuso horário"
+        ariaLabel="Fuso horário"
+        options={ZONES.map((z) => ({ value: z.tz, label: z.label }))}
+      />
       {pending && (
         <p className="flex items-center gap-1 text-xs text-neutral-400">
           <Spinner size={12} /> Salvando…
