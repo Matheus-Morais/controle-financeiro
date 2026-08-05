@@ -146,16 +146,14 @@ export default async function CartaoDetailPage({
         <h1 className="min-w-0 flex-1 truncate text-2xl font-bold">{card.name}</h1>
         <HeaderIconLink
           href={`/gastos/importar?cartao=${id}`}
-          icon={FileUp}
           label="Importar fatura deste cartão"
           title="Importar fatura (PDF)"
-        />
-        <HeaderIconLink
-          href={`/cartoes/${id}/editar`}
-          icon={Pencil}
-          label="Editar cartão"
-          edge
-        />
+        >
+          <FileUp size={20} />
+        </HeaderIconLink>
+        <HeaderIconLink href={`/cartoes/${id}/editar`} label="Editar cartão" edge>
+          <Pencil size={20} />
+        </HeaderIconLink>
       </div>
 
       {notices.map((n) => (

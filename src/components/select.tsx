@@ -178,7 +178,13 @@ export function Select({
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-[60] flex flex-col justify-end">
+        // O sheet é filho do <label> em vários formulários; sem stopPropagation
+        // o clique na opção (ou no backdrop) propaga até o label e reativa o
+        // gatilho — o dropdown fecha e reabre na mesma interação.
+        <div
+          className="fixed inset-0 z-[60] flex flex-col justify-end"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div
             aria-hidden
             onClick={close}

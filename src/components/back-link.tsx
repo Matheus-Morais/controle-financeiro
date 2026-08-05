@@ -2,7 +2,7 @@
 
 import Link, { useLinkStatus } from "next/link";
 import { ChevronLeft, Loader2 } from "lucide-react";
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 
 type IconComponent = ComponentType<{ size?: number; className?: string }>;
 
@@ -12,6 +12,10 @@ type IconComponent = ComponentType<{ size?: number; className?: string }>;
  * tela e a navegação (que pode levar segundos numa rota pesada) parece travada.
  * `useLinkStatus` (Next 15.3+) só funciona num Client Component descendente do
  * `<Link>`, por isso este subcomponente separado.
+ *
+ * Recebe o COMPONENTE do ícone, o que só é possível porque quem chama é o
+ * `BackLink` aqui do lado — dentro do mesmo módulo cliente. Para quem chama de
+ * um Server Component existe o `PendingSlot` abaixo.
  */
 function PendingIcon({ icon: Icon, size }: { icon: IconComponent; size: number }) {
   const { pending } = useLinkStatus();
@@ -19,6 +23,23 @@ function PendingIcon({ icon: Icon, size }: { icon: IconComponent; size: number }
     return <Loader2 size={size} className="motion-safe:animate-spin" aria-hidden />;
   }
   return <Icon size={size} />;
+}
+
+/**
+ * Mesma troca por spinner, mas recebendo o ícone JÁ RENDERIZADO.
+ *
+ * Um componente é uma função, e função não atravessa a fronteira RSC: passar
+ * `icon={FileUp}` de um Server Component para cá quebrava a tela do cartão em
+ * runtime com "Functions cannot be passed directly to Client Components" — o
+ * build não pega, porque a rota é dinâmica e nunca é renderizada na compilação.
+ * Um elemento (`<FileUp />`) é serializável e resolve sem perder o spinner.
+ */
+function PendingSlot({ children, size }: { children: ReactNode; size: number }) {
+  const { pending } = useLinkStatus();
+  if (pending) {
+    return <Loader2 size={size} className="motion-safe:animate-spin" aria-hidden />;
+  }
+  return <>{children}</>;
 }
 
 /** Estilo comum dos alvos de toque do cabeçalho: 40px de alvo, feedback ao tocar. */
@@ -49,16 +70,18 @@ export function BackLink({ href, label = "Voltar" }: { href: string; label?: str
  */
 export function HeaderIconLink({
   href,
-  icon,
+  children,
   label,
   title,
   size = 20,
   edge = false,
 }: {
   href: string;
-  icon: IconComponent;
+  /** O ícone JÁ renderizado (ex.: `<FileUp size={20} />`) — ver `PendingSlot`. */
+  children: ReactNode;
   label: string;
   title?: string;
+  /** Tamanho do spinner que substitui o ícone durante a navegação. */
   size?: number;
   edge?: boolean;
 }) {
@@ -69,7 +92,7 @@ export function HeaderIconLink({
       title={title}
       className={`${edge ? "-mr-2 " : ""}shrink-0 ${HIT_AREA}`}
     >
-      <PendingIcon icon={icon} size={size} />
+      <PendingSlot size={size}>{children}</PendingSlot>
     </Link>
   );
 }
