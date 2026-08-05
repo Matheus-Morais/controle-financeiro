@@ -1,7 +1,11 @@
 "use client";
 
 import { Fragment, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
+
+/** Evita reabrir o sheet logo após fechar (ghost click / ativação do label no touch). */
+const CLOSE_LOCK_MS = 400;
 
 export interface SelectOption {
   value: string;
@@ -72,12 +76,17 @@ export function Select({
   const selected = options.find((o) => o.value === current);
 
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [active, setActive] = useState(0);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const closeLockRef = useRef(false);
   const baseId = useId();
 
+  useEffect(() => setMounted(true), []);
+
   function openSheet() {
+    if (closeLockRef.current) return;
     const i = options.findIndex((o) => o.value === current);
     setActive(i >= 0 ? i : 0);
     setOpen(true);
@@ -85,13 +94,25 @@ export function Select({
 
   function close() {
     setOpen(false);
-    triggerRef.current?.focus();
+    closeLockRef.current = true;
+    window.setTimeout(() => {
+      closeLockRef.current = false;
+    }, CLOSE_LOCK_MS);
+    // No touch, focar o gatilho pode reativá-lo com o dedo ainda levantando.
+    if (window.matchMedia("(pointer: fine)").matches) {
+      triggerRef.current?.focus();
+    }
   }
 
   function choose(v: string) {
     if (!controlled) setInternal(v);
     onChange?.(v);
     close();
+  }
+
+  function stopTouch(e: React.PointerEvent) {
+    e.preventDefault();
+    e.stopPropagation();
   }
 
   // Foco no listbox ao abrir, para o teclado funcionar sem um clique extra.
@@ -177,87 +198,92 @@ export function Select({
         <ChevronDown size={size === "sm" ? 14 : 16} className="shrink-0 text-neutral-400" />
       </button>
 
-      {open && (
-        // O sheet é filho do <label> em vários formulários; sem stopPropagation
-        // o clique na opção (ou no backdrop) propaga até o label e reativa o
-        // gatilho — o dropdown fecha e reabre na mesma interação.
-        <div
-          className="fixed inset-0 z-[60] flex flex-col justify-end"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div
-            aria-hidden
-            onClick={close}
-            className="absolute inset-0 bg-black/40 motion-safe:animate-fade-in"
-          />
-          {/* O ring separa o sheet do fundo no escuro, onde o backdrop preto e o
-              bg-neutral-900 quase se confundem. */}
-          <div className="relative flex max-h-[75svh] flex-col rounded-t-3xl bg-white pb-safe-bottom shadow-2xl ring-1 ring-black/5 motion-safe:animate-sheet-up dark:bg-neutral-900 dark:ring-white/10">
-            <div className="shrink-0 px-4 pb-1 pt-3">
-              <div
-                aria-hidden
-                className="mx-auto h-1 w-10 rounded-full bg-neutral-300 dark:bg-neutral-700"
-              />
-              {title && <p className="mt-3 text-center text-sm font-semibold">{title}</p>}
-            </div>
-
-            {/* O próprio listbox recebe o foco: `aria-activedescendant` só é
-                seguido pelos leitores de tela no elemento focado. */}
+      {open &&
+        mounted &&
+        createPortal(
+          // Portal no body: fora de <label> e evita ghost click no gatilho ao
+          // desmontar o sheet no meio do toque (comum no iOS/Android).
+          <div className="fixed inset-0 z-[60] flex flex-col justify-end">
             <div
-              ref={listRef}
-              role="listbox"
-              tabIndex={-1}
-              onKeyDown={handleKeyDown}
-              aria-label={title ?? ariaLabel}
-              aria-activedescendant={`${baseId}-${active}`}
-              className="min-h-0 flex-1 overflow-y-auto px-2 pb-5 pt-2 outline-none"
-            >
-              {options.map((option, i) => {
-                const isSelected = option.value === current;
-                const startsGroup = option.group && option.group !== options[i - 1]?.group;
-                return (
-                  <Fragment key={option.value}>
-                    {startsGroup && (
+              aria-hidden
+              onPointerDown={(e) => {
+                stopTouch(e);
+                close();
+              }}
+              className="absolute inset-0 bg-black/40 motion-safe:animate-fade-in"
+            />
+            {/* O ring separa o sheet do fundo no escuro, onde o backdrop preto e o
+                bg-neutral-900 quase se confundem. */}
+            <div className="relative flex max-h-[75svh] flex-col rounded-t-3xl bg-white pb-safe-bottom shadow-2xl ring-1 ring-black/5 motion-safe:animate-sheet-up dark:bg-neutral-900 dark:ring-white/10">
+              <div className="shrink-0 px-4 pb-1 pt-3">
+                <div
+                  aria-hidden
+                  className="mx-auto h-1 w-10 rounded-full bg-neutral-300 dark:bg-neutral-700"
+                />
+                {title && <p className="mt-3 text-center text-sm font-semibold">{title}</p>}
+              </div>
+
+              {/* O próprio listbox recebe o foco: `aria-activedescendant` só é
+                  seguido pelos leitores de tela no elemento focado. */}
+              <div
+                ref={listRef}
+                role="listbox"
+                tabIndex={-1}
+                onKeyDown={handleKeyDown}
+                aria-label={title ?? ariaLabel}
+                aria-activedescendant={`${baseId}-${active}`}
+                className="min-h-0 flex-1 overflow-y-auto px-2 pb-5 pt-2 outline-none"
+              >
+                {options.map((option, i) => {
+                  const isSelected = option.value === current;
+                  const startsGroup = option.group && option.group !== options[i - 1]?.group;
+                  return (
+                    <Fragment key={option.value}>
+                      {startsGroup && (
+                        <div
+                          role="presentation"
+                          className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"
+                        >
+                          {option.group}
+                        </div>
+                      )}
                       <div
-                        role="presentation"
-                        className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-neutral-400"
+                        id={`${baseId}-${i}`}
+                        role="option"
+                        aria-selected={isSelected}
+                        data-active={i === active}
+                        onPointerDown={(e) => {
+                          stopTouch(e);
+                          choose(option.value);
+                        }}
+                        onMouseEnter={() => setActive(i)}
+                        className={`flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-sm ${
+                          i === active ? "bg-neutral-100 dark:bg-neutral-800" : ""
+                        }`}
                       >
-                        {option.group}
+                        {option.color != null && (
+                          <span
+                            aria-hidden
+                            className="h-3.5 w-3.5 shrink-0 rounded-full ring-1 ring-black/10 dark:ring-white/25"
+                            style={{ backgroundColor: option.color }}
+                          />
+                        )}
+                        <span className={`min-w-0 flex-1 truncate ${isSelected ? "font-medium" : ""}`}>
+                          {option.label}
+                        </span>
+                        {option.hint && (
+                          <span className="shrink-0 text-xs text-neutral-400">{option.hint}</span>
+                        )}
+                        {isSelected && <Check size={16} className="shrink-0 text-brand" />}
                       </div>
-                    )}
-                    <div
-                      id={`${baseId}-${i}`}
-                      role="option"
-                      aria-selected={isSelected}
-                      data-active={i === active}
-                      onClick={() => choose(option.value)}
-                      onMouseEnter={() => setActive(i)}
-                      className={`flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-sm ${
-                        i === active ? "bg-neutral-100 dark:bg-neutral-800" : ""
-                      }`}
-                    >
-                      {option.color != null && (
-                        <span
-                          aria-hidden
-                          className="h-3.5 w-3.5 shrink-0 rounded-full ring-1 ring-black/10 dark:ring-white/25"
-                          style={{ backgroundColor: option.color }}
-                        />
-                      )}
-                      <span className={`min-w-0 flex-1 truncate ${isSelected ? "font-medium" : ""}`}>
-                        {option.label}
-                      </span>
-                      {option.hint && (
-                        <span className="shrink-0 text-xs text-neutral-400">{option.hint}</span>
-                      )}
-                      {isSelected && <Check size={16} className="shrink-0 text-brand" />}
-                    </div>
-                  </Fragment>
-                );
-              })}
+                    </Fragment>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }
