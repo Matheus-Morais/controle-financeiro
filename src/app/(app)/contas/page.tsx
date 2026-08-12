@@ -38,6 +38,7 @@ export default async function ContasPage({
   const items = (bills ?? [])
     .map((r) => ({
       id: r.id,
+      transactionId: r.transaction_id,
       description: r.description,
       kind: r.kind,
       accountName: r.account_name ?? "—",
@@ -56,11 +57,11 @@ export default async function ContasPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Contas</h1>
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="min-w-0 flex-1 truncate text-2xl font-bold">Contas</h1>
         <Link
           href="/gastos/novo"
-          className="flex items-center gap-1 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-white"
+          className="flex shrink-0 items-center gap-1 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-white"
         >
           <Plus size={16} /> Lançar
         </Link>
@@ -83,26 +84,35 @@ export default async function ContasPage({
                 key={it.id}
                 className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm dark:bg-neutral-900"
               >
-                <span
-                  className="h-9 w-9 shrink-0 rounded-full"
-                  style={{ backgroundColor: it.accountColor }}
-                />
-                <div className="min-w-0 flex-1">
-                  <p className={`truncate font-medium ${it.paid ? "text-neutral-400 line-through" : ""}`}>
-                    {it.description}
-                  </p>
-                  <p className="text-xs text-neutral-500">
-                    {it.accountName}
-                    {it.dueDate && (
-                      <span className={overdue ? "text-red-600" : ""}>
-                        {" "}
-                        · vence {formatDayMonth(it.dueDate)}
-                        {overdue ? " (vencida)" : ""}
-                      </span>
-                    )}
-                  </p>
-                </div>
-                <span className="font-semibold">{formatCents(it.amountCents)}</span>
+                {/* O item leva ao detalhe do gasto — sem isso não havia como
+                    editar nem excluir uma conta fora do cartão pela tela. */}
+                <Link
+                  href={`/gastos/${it.transactionId}?mes=${refMonth}`}
+                  className="flex min-w-0 flex-1 items-center gap-3"
+                >
+                  <span
+                    className="h-9 w-9 shrink-0 rounded-full"
+                    style={{ backgroundColor: it.accountColor }}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span
+                      className={`block truncate font-medium ${it.paid ? "text-neutral-400 line-through" : ""}`}
+                    >
+                      {it.description}
+                    </span>
+                    <span className="block text-xs text-neutral-500">
+                      {it.accountName}
+                      {it.dueDate && (
+                        <span className={overdue ? "text-red-600" : ""}>
+                          {" "}
+                          · vence {formatDayMonth(it.dueDate)}
+                          {overdue ? " (vencida)" : ""}
+                        </span>
+                      )}
+                    </span>
+                  </span>
+                  <span className="shrink-0 font-semibold">{formatCents(it.amountCents)}</span>
+                </Link>
                 <BillPaidToggle installmentId={it.id} paid={it.paid} />
               </li>
             );

@@ -11,7 +11,12 @@ const UUID_RE = /^[0-9a-f-]{36}$/i;
 
 export interface DeleteInstallmentInput {
   transactionId: string;
-  cardId: string;
+  /**
+   * Cartão da tela, quando a exclusão parte de uma fatura. `null` para gasto de
+   * conta (PIX/boleto), que não tem cartão — o escopo real é sempre
+   * (transação × competência), o cartão nunca entrou na query.
+   */
+  cardId: string | null;
   /** Competência exibida na tela (`YYYY-MM-01`). Base do escopo. */
   fromMonth: string;
   /** "month" = só esta competência; "forward" = desta em diante. */
@@ -31,7 +36,11 @@ export interface DeleteInstallmentInput {
  */
 export async function softDeleteInstallments(input: DeleteInstallmentInput): Promise<ActionState> {
   const { transactionId, cardId, fromMonth, scope } = input;
-  if (!UUID_RE.test(transactionId) || !UUID_RE.test(cardId) || !MONTH_RE.test(fromMonth)) {
+  if (
+    !UUID_RE.test(transactionId) ||
+    (cardId !== null && !UUID_RE.test(cardId)) ||
+    !MONTH_RE.test(fromMonth)
+  ) {
     return { error: "Dados inválidos." };
   }
 
