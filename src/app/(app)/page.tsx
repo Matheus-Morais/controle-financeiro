@@ -1,5 +1,14 @@
 import Link from "next/link";
-import { CreditCard, PiggyBank, Receipt, Repeat, Target, TrendingDown, TrendingUp } from "lucide-react";
+import {
+  ChartColumn,
+  CreditCard,
+  PiggyBank,
+  Receipt,
+  Repeat,
+  Target,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import {
   currentReferenceMonth,
@@ -151,17 +160,26 @@ export default async function DashboardPage({
         {/* Gráficos por competência (o que foi lançado no mês) */}
         {hasChartData && (
           <div className="flex flex-col gap-2">
-            <p className="text-xs text-neutral-500">Gastos lançados no mês (competência)</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-neutral-500">Gastos lançados no mês (competência)</p>
+              <Link
+                href={`/graficos?mes=${month}`}
+                className="shrink-0 text-sm font-medium text-brand"
+              >
+                Ver mais
+              </Link>
+            </div>
             <SpendingCharts byCategory={byCategory} monthly={monthlyBars} forecastNext={forecastBar} />
           </div>
         )}
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-5 gap-2">
         <QuickLink href="/recebimentos" icon={<PiggyBank size={20} />} label="Renda" />
         <QuickLink href="/contas" icon={<Receipt size={20} />} label="Contas" />
         <QuickLink href="/recorrentes" icon={<Repeat size={20} />} label="Recorrentes" />
         <QuickLink href="/orcamento" icon={<Target size={20} />} label="Orçamento" />
+        <QuickLink href="/graficos" icon={<ChartColumn size={20} />} label="Gráficos" />
       </div>
 
       <section className="flex flex-col gap-2">
@@ -265,12 +283,16 @@ function SummaryCard({
 
 function QuickLink({ href, icon, label }: { href: string; icon: React.ReactNode; label: string }) {
   return (
+    // `p-2` + rótulo de 10px: com cinco atalhos na linha cada célula fica em
+    // torno de 62px num aparelho de 360px, e "Recorrentes" só cabe assim.
     <Link
       href={href}
-      className="flex flex-col items-center gap-1.5 rounded-2xl bg-white p-3 text-brand shadow-sm dark:bg-neutral-900"
+      className="flex flex-col items-center gap-1.5 rounded-2xl bg-white p-2 text-brand shadow-sm dark:bg-neutral-900"
     >
       {icon}
-      <span className="text-xs font-medium text-neutral-600 dark:text-neutral-300">{label}</span>
+      <span className="w-full truncate text-center text-[10px] font-medium text-neutral-600 dark:text-neutral-300">
+        {label}
+      </span>
     </Link>
   );
 }
