@@ -186,7 +186,7 @@ function RecurringCard({
           />
           <DeleteButton
             onDelete={deleteRecurring.bind(null, row.id)}
-            confirmText="Excluir assinatura? Lançamentos já criados serão mantidos."
+            confirmText="Excluir esta assinatura? Os lançamentos já criados continuam nas faturas — para apagar tudo, abra um deles e use 'Excluir para sempre'."
           />
         </div>
       </div>
