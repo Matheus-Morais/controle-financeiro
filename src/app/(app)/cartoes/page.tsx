@@ -13,7 +13,8 @@ import { aggregateInstallmentTotals } from "@/lib/reports";
 import { resolveOpenMonths } from "@/lib/card-invoices";
 import { getSessionUser } from "@/lib/auth";
 import { materializeRecurringMonths } from "@/lib/recurring";
-import { formatCents } from "@/lib/money";
+import { Money } from "@/components/money";
+import { HideValuesToggle } from "@/components/hide-values-toggle";
 
 /** Rótulo do valor conforme a distância entre a fatura em aberto e o mês corrente. */
 function openMonthLabel(currentMonth: string, openMonth: string): string {
@@ -66,11 +67,12 @@ export default async function CartoesPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Cartões</h1>
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="min-w-0 flex-1 truncate text-2xl font-bold">Cartões</h1>
+        <HideValuesToggle />
         <Link
           href="/cartoes/novo"
-          className="flex items-center gap-1 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-white"
+          className="flex shrink-0 items-center gap-1 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-white"
         >
           <Plus size={16} /> Novo
         </Link>
@@ -102,7 +104,7 @@ export default async function CartoesPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-xs opacity-90">{openMonthLabel(currentMonth, openMonth)}</p>
-                      <p className="text-lg font-bold">{formatCents(total)}</p>
+                      <Money cents={total} className="block text-lg font-bold" />
                     </div>
                     <ChevronRight size={18} className="opacity-80" />
                   </div>

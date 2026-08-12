@@ -3,7 +3,8 @@ import { Plus, Receipt } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { currentReferenceMonth, formatDayMonth, shiftReferenceMonth, todayISO } from "@/lib/date";
 import { sessionTimezone } from "@/lib/user-time";
-import { formatCents } from "@/lib/money";
+import { Money } from "@/components/money";
+import { HideValuesToggle } from "@/components/hide-values-toggle";
 import { getSessionUser } from "@/lib/auth";
 import { materializeRecurringMonths } from "@/lib/recurring";
 import { MonthNav } from "@/components/month-nav";
@@ -59,6 +60,7 @@ export default async function ContasPage({
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-2">
         <h1 className="min-w-0 flex-1 truncate text-2xl font-bold">Contas</h1>
+        <HideValuesToggle />
         <Link
           href="/gastos/novo"
           className="flex shrink-0 items-center gap-1 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-white"
@@ -70,9 +72,9 @@ export default async function ContasPage({
       <MonthNav basePath="/contas" refMonth={refMonth} />
 
       <div className="grid grid-cols-3 gap-2">
-        <SummaryTile label="Total" value={formatCents(total)} />
-        <SummaryTile label="Em aberto" value={formatCents(open)} accent="text-amber-600" />
-        <SummaryTile label="Pago" value={formatCents(paid)} accent="text-emerald-600" />
+        <SummaryTile label="Total" value={<Money cents={total} />} />
+        <SummaryTile label="Em aberto" value={<Money cents={open} />} accent="text-amber-600" />
+        <SummaryTile label="Pago" value={<Money cents={paid} />} accent="text-emerald-600" />
       </div>
 
       {items.length > 0 ? (
@@ -111,7 +113,7 @@ export default async function ContasPage({
                       )}
                     </span>
                   </span>
-                  <span className="shrink-0 font-semibold">{formatCents(it.amountCents)}</span>
+                  <Money cents={it.amountCents} className="shrink-0 font-semibold" />
                 </Link>
                 <BillPaidToggle installmentId={it.id} paid={it.paid} />
               </li>
@@ -138,7 +140,7 @@ function SummaryTile({
   accent,
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   accent?: string;
 }) {
   return (

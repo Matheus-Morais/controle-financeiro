@@ -5,7 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { BackLink, HeaderIconLink } from "@/components/back-link";
 import { currentReferenceMonth, formatDayMonth, formatMonthLabel } from "@/lib/date";
 import { sessionTimezone } from "@/lib/user-time";
-import { formatCents } from "@/lib/money";
+import { Money } from "@/components/money";
+import { HideValuesToggle } from "@/components/hide-values-toggle";
 import { ExpenseScopeDelete } from "@/components/expense-scope-delete";
 import { DeleteExpenseButton } from "@/components/delete-expense-button";
 
@@ -98,6 +99,7 @@ export default async function GastoDetalhePage({
       <div className="flex items-center gap-2">
         <BackLink href={backHref} label={card ? "Voltar para a fatura" : "Voltar para as contas"} />
         <h1 className="min-w-0 flex-1 truncate text-2xl font-bold">{tx.description}</h1>
+        <HideValuesToggle />
         {tx.kind !== "recurring" && (
           <HeaderIconLink
             href={`/gastos/${tx.id}/editar?mes=${focusMonth}`}
@@ -114,7 +116,7 @@ export default async function GastoDetalhePage({
         <p className="text-xs text-neutral-500">
           {tx.kind === "installment" ? "Total do parcelamento" : "Valor"}
         </p>
-        <p className="text-3xl font-bold">{formatCents(liveTotal)}</p>
+        <Money cents={liveTotal} className="block text-3xl font-bold" />
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
           <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-1 font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
             {tx.kind === "recurring" ? <Repeat size={12} /> : null}
@@ -181,9 +183,10 @@ export default async function GastoDetalhePage({
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <span className={`font-semibold ${isDeleted ? "line-through" : ""}`}>
-                      {formatCents(p.amount_cents)}
-                    </span>
+                    <Money
+                      cents={p.amount_cents}
+                      className={`font-semibold ${isDeleted ? "line-through" : ""}`}
+                    />
                     <span
                       className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                         p.status === "paid"

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Plus, Repeat } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { formatCents } from "@/lib/money";
+import { Money } from "@/components/money";
+import { HideValuesToggle } from "@/components/hide-values-toggle";
 import { currentReferenceMonth, formatMonthLabel } from "@/lib/date";
 import { sessionTimezone } from "@/lib/user-time";
 import { DeleteButton } from "@/components/delete-button";
@@ -70,6 +71,7 @@ export default async function RecorrentesPage() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-2">
         <h1 className="min-w-0 flex-1 truncate text-2xl font-bold">Recorrentes</h1>
+        <HideValuesToggle />
         <Link
           href="/recorrentes/novo"
           className="flex shrink-0 items-center gap-1 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-white"
@@ -79,7 +81,7 @@ export default async function RecorrentesPage() {
       </div>
 
       <div className="grid grid-cols-3 gap-2">
-        <SummaryTile label="Por mês" value={formatCents(activeTotal)} />
+        <SummaryTile label="Por mês" value={<Money cents={activeTotal} />} />
         <SummaryTile label="Ativas" value={String(activeRows.length)} accent="text-emerald-600" />
         <SummaryTile label="Pausadas" value={String(pausedRows.length)} />
       </div>
@@ -171,7 +173,7 @@ function RecurringCard({
             {row.sourceName} · dia {row.billingDay}
           </p>
         </div>
-        <span className="shrink-0 font-semibold">{formatCents(row.amountCents)}</span>
+        <Money cents={row.amountCents} className="shrink-0 font-semibold" />
       </div>
 
       <div className="flex items-center justify-between gap-2 border-t border-neutral-100 pt-1 dark:border-neutral-800">
@@ -200,7 +202,7 @@ function SummaryTile({
   accent,
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   accent?: string;
 }) {
   return (
