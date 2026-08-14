@@ -328,6 +328,7 @@ export type Database = {
         Args: { p_ref_month: string };
         Returns: {
           id: string;
+          transaction_id: string;
           amount_cents: number;
           due_date: string | null;
           status: InstallmentStatus;
