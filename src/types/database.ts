@@ -323,6 +323,20 @@ export type Database = {
           purchase_date: string;
         }[];
       };
+      /**
+       * Exclusão DEFINITIVA de um gasto (migration 0021). Com
+       * `p_include_recurring`, apaga também o template da assinatura e todas as
+       * ocorrências já materializadas. Devolve o que foi removido.
+       */
+      delete_expense_atomic: {
+        Args: { p_transaction_id: string; p_include_recurring?: boolean };
+        Returns: {
+          installments: number;
+          transactions: number;
+          invoices: number;
+          recurring: number;
+        };
+      };
       /** Contas fora do cartão da competência, com transação e conta resolvidas. */
       account_bills: {
         Args: { p_ref_month: string };

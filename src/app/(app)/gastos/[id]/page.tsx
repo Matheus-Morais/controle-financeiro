@@ -7,6 +7,7 @@ import { currentReferenceMonth, formatDayMonth, formatMonthLabel } from "@/lib/d
 import { sessionTimezone } from "@/lib/user-time";
 import { formatCents } from "@/lib/money";
 import { ExpenseScopeDelete } from "@/components/expense-scope-delete";
+import { DeleteExpenseButton } from "@/components/delete-expense-button";
 
 const MONTH_RE = /^\d{4}-\d{2}-01$/;
 
@@ -235,9 +236,16 @@ export default async function GastoDetalhePage({
           </>
         ) : (
           <p className="text-xs text-neutral-500">
-            Sem parcela na competência em foco — não há o que excluir por aqui.
+            Sem parcela na competência em foco — só resta a exclusão definitiva.
           </p>
         )}
+
+        <DeleteExpenseButton
+          transactionId={tx.id}
+          installmentsCount={items.length}
+          isRecurring={tx.kind === "recurring" && tx.recurring_id != null}
+          redirectTo={backHref}
+        />
       </section>
     </div>
   );
