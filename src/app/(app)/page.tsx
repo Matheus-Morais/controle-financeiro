@@ -10,6 +10,8 @@ import {
 } from "@/lib/date";
 import { monthCashFlow, monthlyTotals, spendingByCategory, type InvoiceDue } from "@/lib/reports";
 import { formatCents } from "@/lib/money";
+import { Money } from "@/components/money";
+import { HideValuesToggle } from "@/components/hide-values-toggle";
 import { SpendingCharts, type CategorySlice } from "@/components/spending-charts";
 import { MonthNav } from "@/components/month-nav";
 import { getSessionUser } from "@/lib/auth";
@@ -86,9 +88,12 @@ export default async function DashboardPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <p className="text-sm text-neutral-500">Olá{firstName ? `, ${firstName}` : ""} 👋</p>
-        <h1 className="text-2xl font-bold">Resumo do mês</h1>
+      <header className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm text-neutral-500">Olá{firstName ? `, ${firstName}` : ""} 👋</p>
+          <h1 className="text-2xl font-bold">Resumo do mês</h1>
+        </div>
+        <HideValuesToggle className="-mr-2" />
       </header>
 
       <MonthNav basePath="/" refMonth={month} />
@@ -99,12 +104,12 @@ export default async function DashboardPage({
           <SummaryCard
             icon={<TrendingUp className="text-brand" size={18} />}
             label="Entradas"
-            value={formatCents(flow.income)}
+            value={<Money cents={flow.income} />}
           />
           <SummaryCard
             icon={<TrendingDown className="text-red-500" size={18} />}
             label="A pagar no mês"
-            value={formatCents(flow.toPay)}
+            value={<Money cents={flow.toPay} />}
             hint={payHintParts.join(" + ") || undefined}
           />
         </div>
@@ -112,7 +117,7 @@ export default async function DashboardPage({
         <div className="rounded-2xl bg-white p-4 shadow-sm dark:bg-neutral-900">
           <p className="text-xs text-neutral-500">Sobra do mês (entradas − a pagar)</p>
           <p className={`text-3xl font-bold ${flow.leftover < 0 ? "text-red-500" : "text-brand"}`}>
-            {formatCents(flow.leftover)}
+            <Money cents={flow.leftover} />
           </p>
         </div>
 
@@ -221,7 +226,7 @@ function InvoiceRow({ inv }: { inv: InvoiceDue }) {
           </div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
-          <span className="font-semibold">{formatCents(inv.totalCents)}</span>
+          <Money cents={inv.totalCents} className="font-semibold" />
           <InvoiceStateBadge state={inv.state} />
         </div>
       </Link>
@@ -237,7 +242,8 @@ function SummaryCard({
 }: {
   icon: React.ReactNode;
   label: string;
-  value: string;
+  /** ReactNode, e não string: o valor vem embrulhado em `<Money>`. */
+  value: React.ReactNode;
   hint?: string;
 }) {
   return (
@@ -247,7 +253,12 @@ function SummaryCard({
         {label}
       </div>
       <p className="text-xl font-bold">{value}</p>
-      {hint && <p className="mt-1 text-[11px] text-neutral-400">{hint}</p>}
+      {/* O detalhamento é quase todo número, então o bloco inteiro é um valor. */}
+      {hint && (
+        <p data-money className="mt-1 text-[11px] text-neutral-400">
+          {hint}
+        </p>
+      )}
     </div>
   );
 }

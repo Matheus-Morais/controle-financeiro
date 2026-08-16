@@ -6,7 +6,8 @@ import { currentReferenceMonth, formatDayMonth } from "@/lib/date";
 import { sessionTimezone } from "@/lib/user-time";
 import { invoiceRefForMonth, ymd } from "@/lib/invoice";
 import { resolveOpenMonths } from "@/lib/card-invoices";
-import { formatCents } from "@/lib/money";
+import { Money } from "@/components/money";
+import { HideValuesToggle } from "@/components/hide-values-toggle";
 import { InvoiceTabs, type InvoiceItem } from "@/components/invoice-tabs";
 import { InvoicePaidToggle } from "@/components/invoice-paid-toggle";
 import { MonthNav } from "@/components/month-nav";
@@ -144,6 +145,7 @@ export default async function CartaoDetailPage({
       <div className="flex items-center gap-2">
         <BackLink href="/cartoes" label="Voltar para os cartões" />
         <h1 className="min-w-0 flex-1 truncate text-2xl font-bold">{card.name}</h1>
+        <HideValuesToggle />
         <HeaderIconLink
           href={`/gastos/importar?cartao=${id}`}
           label="Importar fatura deste cartão"
@@ -174,7 +176,7 @@ export default async function CartaoDetailPage({
         style={{ backgroundColor: card.color ?? "#16a34a" }}
       >
         <p className="text-xs opacity-90">Total da fatura</p>
-        <p className="text-3xl font-bold">{formatCents(total)}</p>
+        <Money cents={total} className="block text-3xl font-bold" />
 
         <div className="mt-3 grid grid-cols-2 gap-2">
           <div className="flex items-center gap-2 rounded-xl bg-white/15 px-3 py-2">
@@ -196,7 +198,7 @@ export default async function CartaoDetailPage({
         {availableCents != null && (
           <div className="mt-2 flex items-center justify-between rounded-xl bg-white/15 px-3 py-2 text-sm">
             <span className="opacity-90">Limite disponível</span>
-            <span className="font-semibold">{formatCents(Math.max(0, availableCents))}</span>
+            <Money cents={Math.max(0, availableCents)} className="font-semibold" />
           </div>
         )}
 

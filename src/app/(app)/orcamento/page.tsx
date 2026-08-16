@@ -2,7 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { currentReferenceMonth, formatMonthLabel } from "@/lib/date";
 import { sessionTimezone } from "@/lib/user-time";
 import { spendingByCategory } from "@/lib/reports";
-import { formatCents } from "@/lib/money";
+import { Money } from "@/components/money";
+import { HideValuesToggle } from "@/components/hide-values-toggle";
 import { BudgetRow } from "@/components/budget-row";
 import { AddCategoryForm } from "@/components/add-category-form";
 import { DeleteButton } from "@/components/delete-button";
@@ -27,18 +28,21 @@ export default async function OrcamentoPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-2xl font-bold">Orçamento</h1>
-        <p className="text-sm text-neutral-500">{formatMonthLabel(refMonth)}</p>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold">Orçamento</h1>
+          <p className="text-sm text-neutral-500">{formatMonthLabel(refMonth)}</p>
+        </div>
+        <HideValuesToggle className="-mr-2" />
       </div>
 
       {totalBudget > 0 && (
         <div className="rounded-2xl bg-white p-4 shadow-sm dark:bg-neutral-900">
           <p className="text-xs text-neutral-500">Gasto nas categorias com meta</p>
           <p className="text-2xl font-bold">
-            {formatCents(totalSpentInBudgets)}{" "}
+            <Money cents={totalSpentInBudgets} />{" "}
             <span className="text-sm font-normal text-neutral-400">
-              de {formatCents(totalBudget)}
+              de <Money cents={totalBudget} />
             </span>
           </p>
         </div>
@@ -66,7 +70,7 @@ export default async function OrcamentoPage() {
 
       {spending.get("none") ? (
         <p className="text-center text-xs text-neutral-400">
-          Sem categoria neste mês: {formatCents(spending.get("none") ?? 0)}
+          Sem categoria neste mês: <Money cents={spending.get("none") ?? 0} />
         </p>
       ) : null}
 

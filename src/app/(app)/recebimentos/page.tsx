@@ -3,7 +3,8 @@ import { Plus, Repeat } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { currentReferenceMonth, formatDayMonth } from "@/lib/date";
 import { sessionTimezone } from "@/lib/user-time";
-import { formatCents } from "@/lib/money";
+import { Money } from "@/components/money";
+import { HideValuesToggle } from "@/components/hide-values-toggle";
 import { DeleteButton } from "@/components/delete-button";
 import { EndRecurrenceButton } from "@/components/end-recurrence-button";
 import { MonthNav } from "@/components/month-nav";
@@ -28,11 +29,12 @@ export default async function RecebimentosPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Recebimentos</h1>
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="min-w-0 flex-1 truncate text-2xl font-bold">Recebimentos</h1>
+        <HideValuesToggle />
         <Link
           href="/recebimentos/novo"
-          className="flex items-center gap-1 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-white"
+          className="flex shrink-0 items-center gap-1 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-white"
         >
           <Plus size={16} /> Novo
         </Link>
@@ -42,7 +44,7 @@ export default async function RecebimentosPage({
 
       <div className="rounded-2xl bg-brand p-4 text-white shadow-sm">
         <p className="text-xs opacity-90">Total recebido no mês</p>
-        <p className="text-3xl font-bold">{formatCents(total)}</p>
+        <Money cents={total} className="block text-3xl font-bold" />
       </div>
 
       {incomes && incomes.length > 0 ? (
@@ -69,7 +71,7 @@ export default async function RecebimentosPage({
                   </p>
                 </div>
                 <div className="flex items-center gap-1">
-                  <span className="font-semibold">{formatCents(inc.amount_cents)}</span>
+                  <Money cents={inc.amount_cents} className="font-semibold" />
                   {inc.is_recurring && !ended && (
                     <EndRecurrenceButton onEnd={endIncomeRecurrence.bind(null, inc.id)} />
                   )}
