@@ -323,6 +323,21 @@ export type Database = {
           purchase_date: string;
         }[];
       };
+      /** Total recebido por competência (migration 0022) — espelho de monthly_totals. */
+      monthly_income_totals: {
+        Args: { p_months: string[] };
+        Returns: { reference_month: string; cents: number }[];
+      };
+      /** Gasto por cartão na competência, já com nome e cor (migration 0022). */
+      spending_by_card: {
+        Args: { p_ref_month: string };
+        Returns: {
+          card_id: string;
+          card_name: string;
+          card_color: string | null;
+          cents: number;
+        }[];
+      };
       /**
        * Exclusão DEFINITIVA de um gasto (migration 0021). Com
        * `p_include_recurring`, apaga também o template da assinatura e todas as

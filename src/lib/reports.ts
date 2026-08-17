@@ -43,6 +43,51 @@ export async function monthlyTotals(
   return months.map((m) => ({ month: m, cents: byMonth.get(m) ?? 0 }));
 }
 
+/**
+ * Total RECEBIDO por mês nos últimos `count` meses (inclui o mês corrente).
+ *
+ * Espelho de `monthlyTotals` para o outro lado do caixa, e o que permite montar
+ * a série "entradas × saídas" da tela de gráficos numa ida só — por fluxo de
+ * caixa do mês seriam doze chamadas de `monthCashFlow`, uma por competência.
+ */
+export async function monthlyIncomeTotals(
+  db: DB,
+  currentMonth: string,
+  count = 6,
+): Promise<{ month: string; cents: number }[]> {
+  const months: string[] = [];
+  for (let i = count - 1; i >= 0; i--) months.push(shiftReferenceMonth(currentMonth, -i));
+
+  const { data, error } = await db.rpc("monthly_income_totals", { p_months: months });
+
+  const byMonth = new Map<string, number>((data ?? []).map((r) => [r.reference_month, r.cents]));
+  if (error) byMonth.clear();
+  return months.map((m) => ({ month: m, cents: byMonth.get(m) ?? 0 }));
+}
+
+/** Uma fatia do gasto do mês por cartão, já com o nome e a cor para a legenda. */
+export interface CardSpending {
+  cardId: string;
+  name: string;
+  color: string;
+  cents: number;
+}
+
+/** Gasto do mês por cartão (competência), maior primeiro. */
+export async function spendingByCard(db: DB, refMonth: string): Promise<CardSpending[]> {
+  const { data, error } = await db.rpc("spending_by_card", { p_ref_month: refMonth });
+  if (error || !data?.length) return [];
+
+  return data
+    .map((r) => ({
+      cardId: r.card_id,
+      name: r.card_name,
+      color: r.card_color ?? "#94a3b8",
+      cents: r.cents,
+    }))
+    .sort((a, b) => b.cents - a.cents);
+}
+
 // ── Fluxo de caixa do mês (regime de vencimento) ────────────────────────────
 //
 // Enquanto os relatórios acima somam por COMPETÊNCIA (mês em que a fatura fecha),
