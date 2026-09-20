@@ -59,6 +59,8 @@ class QueryBuilder implements PromiseLike<{ data: Row[] | Row | null; error: nul
   private one: "single" | "maybeSingle" | null = null;
   private countMode = false;
   private headMode = false;
+  private sort: { col: string; ascending: boolean } | null = null;
+  private max: number | null = null;
 
   constructor(
     private store: Store,
@@ -143,7 +145,16 @@ class QueryBuilder implements PromiseLike<{ data: Row[] | Row | null; error: nul
     return this;
   }
 
-  order(_col: string, _opts?: unknown) {
+  /** Ordena de verdade: há código que depende da primeira linha (a âncora do
+      cronograma de parcelas, por exemplo), e um `order` que não ordena esconde
+      justamente esse tipo de erro. */
+  order(col: string, opts?: { ascending?: boolean }) {
+    this.sort = { col, ascending: opts?.ascending !== false };
+    return this;
+  }
+
+  limit(n: number) {
+    this.max = n;
     return this;
   }
 
@@ -203,17 +214,38 @@ class QueryBuilder implements PromiseLike<{ data: Row[] | Row | null; error: nul
       return this.shape([...hit]);
     }
 
-    const hit = this.matching();
+    let hit = this.matching();
     if (this.countMode) {
       return { data: this.headMode ? null : hit, error: null, count: hit.length };
     }
+    if (this.sort) {
+      const { col, ascending } = this.sort;
+      hit = [...hit].sort((a, b) => {
+        const d = cmp(a[col], b[col]);
+        // Valor nulo não compara: mantém a ordem de inserção, como o fake fazia
+        // antes de ordenar.
+        return (Number.isNaN(d) ? 0 : d) * (ascending ? 1 : -1);
+      });
+    }
+    if (this.max != null) hit = hit.slice(0, this.max);
     return this.shape(hit);
   }
 
+  /**
+   * O resultado sai COPIADO do armazém.
+   *
+   * O PostgREST devolve JSON: quem leu fica com um retrato daquele instante. Se
+   * o fake devolvesse a linha viva, um `update` posterior alteraria por baixo o
+   * que o chamador já tinha lido — e comparações do tipo "o valor mudou?" entre
+   * o antes e o depois passariam a dar sempre "não", escondendo o bug em vez de
+   * revelá-lo.
+   */
   private shape(hit: Row[]) {
-    if (this.one === "single") return { data: hit[0] ?? null, error: null };
-    if (this.one === "maybeSingle") return { data: hit[0] ?? null, error: null };
-    return { data: hit, error: null };
+    const copy = hit.map((r) => ({ ...r }));
+    if (this.one === "single" || this.one === "maybeSingle") {
+      return { data: copy[0] ?? null, error: null };
+    }
+    return { data: copy, error: null };
   }
 
   then<R1 = { data: Row[] | Row | null; error: null }, R2 = never>(
@@ -230,20 +262,37 @@ class QueryBuilder implements PromiseLike<{ data: Row[] | Row | null; error: nul
 
 export interface FakeDB {
   from(table: string): QueryBuilder;
+  /** Só o `getUser` — é o que as Server Actions chamam para checar a sessão. */
+  auth: { getUser(): Promise<{ data: { user: { id: string } | null } }> };
   rpc(fn: string, args: Record<string, unknown>): Promise<{ data: unknown; error: null }>;
   /** Conteúdo bruto do armazém, para asserções. */
   tables: Store;
   /** Log `tabela:operação` (e `rpc:<fn>`) de cada query — usado para detectar N+1. */
   queries: string[];
+  /**
+   * Registra o comportamento de uma RPC que o fake não espelha.
+   *
+   * As funções de escrita atômica (`update_expense_atomic` e companhia) são SQL
+   * de verdade; reimplementá-las aqui seria manter uma segunda versão delas,
+   * que dá errado em silêncio quando a de verdade muda. O que interessa testar
+   * do lado do TypeScript é o PAYLOAD que a action monta — então o teste
+   * registra um handler, guarda os argumentos e decide o que a função devolve.
+   */
+  onRpc(fn: string, handler: (args: Record<string, unknown>) => unknown): void;
 }
 
-/** Cria um client fake já semeado com as tabelas informadas. */
-export function createFakeDB(seed: Store = {}): FakeDB {
+/**
+ * Cria um client fake já semeado com as tabelas informadas. `userId` é quem a
+ * sessão devolve; `null` simula visitante não autenticado, que é o caminho que
+ * toda action de mutação precisa recusar.
+ */
+export function createFakeDB(seed: Store = {}, userId: string | null = "user-1"): FakeDB {
   const tables: Store = {};
   for (const [t, rows] of Object.entries(seed)) {
     tables[t] = rows.map((r) => ({ id: nextId(), ...r }));
   }
   const queries: string[] = [];
+  const customRpc = new Map<string, (args: Record<string, unknown>) => unknown>();
 
   /**
    * Espelho da função da migration 0016: aplica os inserts na mesma ordem
@@ -326,11 +375,27 @@ export function createFakeDB(seed: Store = {}): FakeDB {
   return {
     tables,
     queries,
+    auth: {
+      getUser: () => Promise.resolve({ data: { user: userId ? { id: userId } : null } }),
+    },
     from(table: string) {
       return new QueryBuilder(tables, table, (t, kind) => queries.push(`${t}:${kind}`));
     },
+    onRpc(fn, handler) {
+      customRpc.set(fn, handler);
+    },
     rpc(fn: string, args: Record<string, unknown>) {
       queries.push(`rpc:${fn}`);
+      const custom = customRpc.get(fn);
+      if (custom) {
+        const data = custom(args);
+        // Handler pode devolver o formato de erro do PostgREST para exercitar o
+        // caminho de falha da action.
+        if (data && typeof data === "object" && "error" in data) {
+          return Promise.resolve(data as { data: unknown; error: null });
+        }
+        return Promise.resolve({ data, error: null });
+      }
       switch (fn) {
         case "materialize_recurring_atomic":
           return Promise.resolve({ data: materializeRecurringAtomic(args), error: null });
