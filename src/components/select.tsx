@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
+import { useBackButtonClose, useBodyScrollLock, useFocusTrap } from "@/components/sheet-hooks";
 
 /**
  * Quanto o dedo pode andar entre o toque e o soltar para ainda contar como
@@ -113,7 +114,7 @@ export function Select({
   /** Instante do fechamento, para descartar o `click` fantasma do iOS. */
   const closedAtRef = useRef(0);
   /** O sheet empurrou uma entrada no histórico (para o voltar fechá-lo). */
-  const pushedHistoryRef = useRef(false);
+  const popHistoryEntryRef = useRef<() => void>(() => {});
   const baseId = useId();
   const listboxId = `${baseId}-listbox`;
 
@@ -139,16 +140,18 @@ export function Select({
     tapRef.current = null;
     dragRef.current = null;
     closedAtRef.current = Date.now();
-    if (pushedHistoryRef.current && !fromPopstate) {
-      pushedHistoryRef.current = false;
-      history.back();
-    }
-    if (fromPopstate) pushedHistoryRef.current = false;
+    if (!fromPopstate) popHistoryEntryRef.current();
     // No touch, focar o gatilho pode reativá-lo com o dedo ainda levantando.
     if (window.matchMedia("(pointer: fine)").matches) {
       triggerRef.current?.focus();
     }
   }, []);
+
+  // O hook precisa do `close`, e o `close` precisa desfazer a entrada que o
+  // hook empilhou: o ref quebra o ciclo sem recriar o `close` a cada render
+  // (o que faria o efeito do voltar remontar e empilhar histórico de novo).
+  const popHistoryEntry = useBackButtonClose(open, close);
+  popHistoryEntryRef.current = popHistoryEntry;
 
   function choose(v: string) {
     if (!controlled) setInternal(v);
@@ -169,57 +172,8 @@ export function Select({
       ?.scrollIntoView({ block: "nearest" });
   }, [open, active]);
 
-  // Trava o scroll do body enquanto o sheet está aberto.
-  useEffect(() => {
-    if (!open) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
-  }, [open]);
-
-  /**
-   * Voltar do Android fecha o sheet em vez de navegar. Sem isto, o gesto mais
-   * instintivo para "sair daqui" tirava o usuário da tela inteira, com o
-   * formulário preenchido.
-   */
-  useEffect(() => {
-    if (!open) return;
-    history.pushState({ cfSheet: true }, "");
-    pushedHistoryRef.current = true;
-    const onPop = () => close(true);
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, [open, close]);
-
-  /**
-   * Foco preso no sheet enquanto ele está aberto: com o backdrop cobrindo a
-   * tela, um `Tab` que escapasse levaria o foco para controles invisíveis.
-   */
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key !== "Tab") return;
-      const sheet = sheetRef.current;
-      if (!sheet) return;
-      const focusables = sheet.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])',
-      );
-      const first = focusables[0] ?? listRef.current;
-      const last = focusables[focusables.length - 1] ?? listRef.current;
-      if (!first || !last) return;
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    }
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [open]);
+  useBodyScrollLock(open);
+  useFocusTrap(open, sheetRef, listRef);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     const last = options.length - 1;

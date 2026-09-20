@@ -4,32 +4,7 @@ import { Pencil } from "lucide-react";
 import { Select } from "@/components/select";
 import { formatCents, parseBRLToCents } from "@/lib/money";
 import type { ExistingOccurrence, ExtractedTipo } from "@/lib/invoice-import";
-
-export interface Category {
-  id: string;
-  name: string;
-}
-
-/** Um lançamento da fatura como a revisão o manipula (estado da tela). */
-export interface EditableItem {
-  id: string;
-  statementDescription: string; // nome bruto da fatura (imutável, usado na dedupe)
-  description: string; // nome amigável (editável, sem o token de parcela)
-  valorBrl: string; // editável
-  purchaseDate: string; // YYYY-MM-DD, editável
-  categoryId: string; // "" ou uuid
-  tipo: ExtractedTipo;
-  parcela: { atual: number; total: number } | null; // parcela lida da fatura
-  importable: boolean;
-  include: boolean;
-  /** Ocorrência já gravada nesta competência que corresponde a este lançamento. */
-  match: ExistingOccurrence | null;
-  /** Assinatura JÁ cadastrada à qual o item pertence (importa vinculado a ela). */
-  linkedRecurringId: string | null;
-  linkedRecurringName: string | null;
-  suggestedRecurring: boolean; // IA sinalizou como provável recorrente
-  markAsRecurring: boolean; // usuário quer criar como recorrente
-}
+import type { Category, EditableItem } from "@/lib/import-review";
 
 /** Texto do selo que explica por que o item já existe na competência. */
 function matchLabel(match: ExistingOccurrence): string {
