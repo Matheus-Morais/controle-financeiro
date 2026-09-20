@@ -5,6 +5,7 @@ import {
   PiggyBank,
   Receipt,
   Repeat,
+  Search,
   Target,
   TrendingDown,
   TrendingUp,
@@ -174,7 +175,10 @@ export default async function DashboardPage({
         )}
       </div>
 
-      <div className="grid grid-cols-5 gap-2">
+      {/* Duas linhas de três: com o atalho da busca eram seis, e seis colunas
+          numa tela de celular deixam o rótulo ilegível. */}
+      <div className="grid grid-cols-3 gap-2">
+        <QuickLink href="/gastos" icon={<Search size={20} />} label="Buscar" />
         <QuickLink href="/recebimentos" icon={<PiggyBank size={20} />} label="Renda" />
         <QuickLink href="/contas" icon={<Receipt size={20} />} label="Contas" />
         <QuickLink href="/recorrentes" icon={<Repeat size={20} />} label="Recorrentes" />
