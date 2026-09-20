@@ -27,6 +27,7 @@ describe("matcher do middleware", () => {
 
   it("intercepta as rotas da aplicação (é onde a sessão é renovada)", () => {
     expect(matches("/")).toBe(true);
+    expect(matches("/gastos")).toBe(true);
     expect(matches("/cartoes")).toBe(true);
     expect(matches("/cartoes/abc-123")).toBe(true);
     expect(matches("/gastos/novo")).toBe(true);
@@ -39,6 +40,11 @@ describe("matcher do middleware", () => {
     expect(matches("/_next/image")).toBe(false);
     expect(matches("/favicon.ico")).toBe(false);
     expect(matches("/sw.js")).toBe(false);
+    // A página de "sem conexão" precisa ficar de fora: o service worker a busca
+    // durante a instalação, sem cookie de sessão. Interceptada, o que entraria
+    // no cache seria o redirect para /login — e é isso que o usuário veria ao
+    // abrir o app sem internet.
+    expect(matches("/offline.html")).toBe(false);
     expect(matches("/manifest.webmanifest")).toBe(false);
     expect(matches("/icons/icon-192.png")).toBe(false);
     expect(matches("/logo.svg")).toBe(false);

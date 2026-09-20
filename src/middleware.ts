@@ -64,12 +64,12 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Ignora estáticos, imagens, o service worker, o manifest, a logo E as rotas
-  // de API. Cada rota de /api faz a própria autorização (CRON_SECRET no cron,
+  // Ignora estáticos, imagens, o service worker, a página de "sem conexão", o
+  // manifest, a logo E as rotas de API. Cada rota de /api faz a própria autorização (CRON_SECRET no cron,
   // sessão no export e na importação) e não precisa de renovação de cookie.
   // Sem esta exclusão o cron, que não envia cookie, era redirecionado para
   // /login antes de a rota validar o CRON_SECRET.
   matcher: [
-    "/((?!api/|_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|icons/|logo.svg|logo-maskable.svg).*)",
+    "/((?!api/|_next/static|_next/image|favicon.ico|sw.js|offline.html|manifest.webmanifest|icons/|logo.svg|logo-maskable.svg).*)",
   ],
 };
