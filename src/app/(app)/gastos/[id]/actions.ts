@@ -10,6 +10,51 @@ import { assertOwned } from "@/lib/ownership";
 
 type ActionState = { error?: string } | undefined;
 
+const UUID_RE = /^[0-9a-f-]{36}$/i;
+
+/**
+ * Exclusão DEFINITIVA de um gasto — o oposto do soft-delete por competência
+ * (`softDeleteInstallments`, em cartoes/[id]/actions.ts), que preserva o
+ * histórico e deixa a parcela esmaecida na fatura. Aqui não sobra nada: todas
+ * as parcelas (inclusive passadas e pagas), a transação e, quando pedido, o
+ * template da assinatura com todas as ocorrências já materializadas.
+ *
+ * Tudo dentro de `delete_expense_atomic` (migration 0021): a limpeza toca
+ * quatro tabelas e o PostgREST não dá transação — encadear os deletes aqui
+ * deixaria o gasto meio-apagado se qualquer passo falhasse.
+ *
+ * @param includeRecurring apaga a assinatura inteira, não só esta ocorrência.
+ */
+export async function deleteExpenseForever(
+  id: string,
+  includeRecurring: boolean,
+): Promise<{ error?: string }> {
+  if (!UUID_RE.test(id)) return { error: "Dados inválidos." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado." };
+
+  const { error } = await supabase.rpc("delete_expense_atomic", {
+    p_transaction_id: id,
+    p_include_recurring: includeRecurring,
+  });
+  if (error) {
+    console.error("[gastos/excluir] falha ao apagar:", error.code);
+    return {
+      error:
+        error.code === "P0002"
+          ? "Gasto não encontrado. Ele já pode ter sido excluído."
+          : "Não foi possível excluir. Tente novamente.",
+    };
+  }
+
+  revalidatePath("/", "layout");
+  return {};
+}
+
 /**
  * Edita um gasto (single/installment): atualiza a transação e regenera as
  * parcelas via `generateInstallments`. Toda a gravação acontece dentro de

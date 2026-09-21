@@ -1,5 +1,15 @@
 import Link from "next/link";
-import { CreditCard, PiggyBank, Receipt, Repeat, Target, TrendingDown, TrendingUp } from "lucide-react";
+import {
+  ChartColumn,
+  CreditCard,
+  PiggyBank,
+  Receipt,
+  Repeat,
+  Search,
+  Target,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import {
   currentReferenceMonth,
@@ -10,6 +20,8 @@ import {
 } from "@/lib/date";
 import { monthCashFlow, monthlyTotals, spendingByCategory, type InvoiceDue } from "@/lib/reports";
 import { formatCents } from "@/lib/money";
+import { Money } from "@/components/money";
+import { HideValuesToggle } from "@/components/hide-values-toggle";
 import { SpendingCharts, type CategorySlice } from "@/components/spending-charts";
 import { MonthNav } from "@/components/month-nav";
 import { getSessionUser } from "@/lib/auth";
@@ -86,9 +98,12 @@ export default async function DashboardPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <p className="text-sm text-neutral-500">Olá{firstName ? `, ${firstName}` : ""} 👋</p>
-        <h1 className="text-2xl font-bold">Resumo do mês</h1>
+      <header className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm text-neutral-500">Olá{firstName ? `, ${firstName}` : ""} 👋</p>
+          <h1 className="text-2xl font-bold">Resumo do mês</h1>
+        </div>
+        <HideValuesToggle className="-mr-2" />
       </header>
 
       <MonthNav basePath="/" refMonth={month} />
@@ -99,12 +114,12 @@ export default async function DashboardPage({
           <SummaryCard
             icon={<TrendingUp className="text-brand" size={18} />}
             label="Entradas"
-            value={formatCents(flow.income)}
+            value={<Money cents={flow.income} />}
           />
           <SummaryCard
             icon={<TrendingDown className="text-red-500" size={18} />}
             label="A pagar no mês"
-            value={formatCents(flow.toPay)}
+            value={<Money cents={flow.toPay} />}
             hint={payHintParts.join(" + ") || undefined}
           />
         </div>
@@ -112,7 +127,7 @@ export default async function DashboardPage({
         <div className="rounded-2xl bg-white p-4 shadow-sm dark:bg-neutral-900">
           <p className="text-xs text-neutral-500">Sobra do mês (entradas − a pagar)</p>
           <p className={`text-3xl font-bold ${flow.leftover < 0 ? "text-red-500" : "text-brand"}`}>
-            {formatCents(flow.leftover)}
+            <Money cents={flow.leftover} />
           </p>
         </div>
 
@@ -146,17 +161,29 @@ export default async function DashboardPage({
         {/* Gráficos por competência (o que foi lançado no mês) */}
         {hasChartData && (
           <div className="flex flex-col gap-2">
-            <p className="text-xs text-neutral-500">Gastos lançados no mês (competência)</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-neutral-500">Gastos lançados no mês (competência)</p>
+              <Link
+                href={`/graficos?mes=${month}`}
+                className="shrink-0 text-sm font-medium text-brand"
+              >
+                Ver mais
+              </Link>
+            </div>
             <SpendingCharts byCategory={byCategory} monthly={monthlyBars} forecastNext={forecastBar} />
           </div>
         )}
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      {/* Duas linhas de três: com o atalho da busca eram seis, e seis colunas
+          numa tela de celular deixam o rótulo ilegível. */}
+      <div className="grid grid-cols-3 gap-2">
+        <QuickLink href="/gastos" icon={<Search size={20} />} label="Buscar" />
         <QuickLink href="/recebimentos" icon={<PiggyBank size={20} />} label="Renda" />
         <QuickLink href="/contas" icon={<Receipt size={20} />} label="Contas" />
         <QuickLink href="/recorrentes" icon={<Repeat size={20} />} label="Recorrentes" />
         <QuickLink href="/orcamento" icon={<Target size={20} />} label="Orçamento" />
+        <QuickLink href="/graficos" icon={<ChartColumn size={20} />} label="Gráficos" />
       </div>
 
       <section className="flex flex-col gap-2">
@@ -221,7 +248,7 @@ function InvoiceRow({ inv }: { inv: InvoiceDue }) {
           </div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
-          <span className="font-semibold">{formatCents(inv.totalCents)}</span>
+          <Money cents={inv.totalCents} className="font-semibold" />
           <InvoiceStateBadge state={inv.state} />
         </div>
       </Link>
@@ -237,7 +264,8 @@ function SummaryCard({
 }: {
   icon: React.ReactNode;
   label: string;
-  value: string;
+  /** ReactNode, e não string: o valor vem embrulhado em `<Money>`. */
+  value: React.ReactNode;
   hint?: string;
 }) {
   return (
@@ -247,19 +275,28 @@ function SummaryCard({
         {label}
       </div>
       <p className="text-xl font-bold">{value}</p>
-      {hint && <p className="mt-1 text-[11px] text-neutral-400">{hint}</p>}
+      {/* O detalhamento é quase todo número, então o bloco inteiro é um valor. */}
+      {hint && (
+        <p data-money className="mt-1 text-[11px] text-neutral-400">
+          {hint}
+        </p>
+      )}
     </div>
   );
 }
 
 function QuickLink({ href, icon, label }: { href: string; icon: React.ReactNode; label: string }) {
   return (
+    // `p-2` + rótulo de 10px: com cinco atalhos na linha cada célula fica em
+    // torno de 62px num aparelho de 360px, e "Recorrentes" só cabe assim.
     <Link
       href={href}
-      className="flex flex-col items-center gap-1.5 rounded-2xl bg-white p-3 text-brand shadow-sm dark:bg-neutral-900"
+      className="flex flex-col items-center gap-1.5 rounded-2xl bg-white p-2 text-brand shadow-sm dark:bg-neutral-900"
     >
       {icon}
-      <span className="text-xs font-medium text-neutral-600 dark:text-neutral-300">{label}</span>
+      <span className="w-full truncate text-center text-[10px] font-medium text-neutral-600 dark:text-neutral-300">
+        {label}
+      </span>
     </Link>
   );
 }

@@ -31,7 +31,7 @@ function MonthlyTooltip({
         {bar.label}
         {bar.forecast ? " · previsto" : ""}
       </p>
-      <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">
+      <p data-money className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">
         {formatCents(bar.value)}
       </p>
     </div>
@@ -56,7 +56,7 @@ function CategoryTooltip({
         />
         {slice.name}
       </p>
-      <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">
+      <p data-money className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">
         {formatCents(slice.value)}
       </p>
     </div>
@@ -95,7 +95,10 @@ export function SpendingCharts({
         <section className="rounded-2xl bg-white p-4 shadow-sm dark:bg-neutral-900">
           <h2 className="mb-2 font-semibold">Gasto por categoria</h2>
           <div className="flex items-center gap-3">
-            <div className="relative w-1/2">
+            {/* `data-money-chart`: a proporção das fatias também é informação
+                financeira — esconder o número e deixar o gráfico legível seria
+                privacidade de fachada. */}
+            <div data-money-chart className="relative w-1/2">
               <ResponsiveContainer width="100%" height={160}>
                 <PieChart>
                   <Pie
@@ -120,7 +123,7 @@ export function SpendingCharts({
                 <span className="text-[10px] uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
                   Total
                 </span>
-                <span className="text-sm font-bold text-neutral-900 dark:text-neutral-50">
+                <span data-money className="text-sm font-bold text-neutral-900 dark:text-neutral-50">
                   {formatCents(byCategory.reduce((sum, c) => sum + c.value, 0))}
                 </span>
               </div>
@@ -136,7 +139,9 @@ export function SpendingCharts({
                       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.color }} />
                       <span className="truncate">{c.name}</span>
                     </span>
-                    <span className="shrink-0 font-medium">{formatCents(c.value)}</span>
+                    <span data-money className="shrink-0 font-medium">
+                      {formatCents(c.value)}
+                    </span>
                   </li>
                 ))}
             </ul>
@@ -180,7 +185,10 @@ function MonthlyChart({
       <div className="mb-3 flex items-start justify-between gap-2">
         <div>
           <h2 className="font-semibold">Últimos meses</h2>
-          <p className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50">
+          <p
+            data-money
+            className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50"
+          >
             {formatCents(current.value)}
           </p>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -203,6 +211,7 @@ function MonthlyChart({
         )}
       </div>
 
+      <div data-money-chart>
       <ResponsiveContainer width="100%" height={150}>
         <BarChart data={chartData} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
           <CartesianGrid
@@ -237,10 +246,12 @@ function MonthlyChart({
           </Bar>
         </BarChart>
       </ResponsiveContainer>
+      </div>
       {forecastNext && (
         <p className="mt-2 flex items-center gap-1.5 text-[11px] text-neutral-400 dark:text-neutral-500">
           <span className="inline-block h-2 w-2 rounded-sm border border-dashed border-brand" />
-          previsto para {forecastNext.label}: {formatCents(forecastNext.value)}
+          previsto para {forecastNext.label}:{" "}
+          <span data-money>{formatCents(forecastNext.value)}</span>
         </p>
       )}
     </section>

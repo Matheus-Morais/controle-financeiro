@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { formatCents } from "@/lib/money";
+import { Money } from "@/components/money";
 import { formatDayMonth } from "@/lib/date";
 import { ConvertToRecurringButton } from "@/components/convert-to-recurring-button";
 import { DeleteInstallmentButton } from "@/components/delete-installment-button";
@@ -57,9 +57,7 @@ export function InvoiceTabs({
               }
             >
               {t.label}
-              <span className="block text-[10px] font-normal opacity-70">
-                {formatCents(total)}
-              </span>
+              <Money cents={total} className="block text-[10px] font-normal opacity-70" />
             </button>
           );
         })}
@@ -79,7 +77,7 @@ export function InvoiceTabs({
             return (
               <li key={item.id} className="flex min-w-0 items-center gap-1">
                 <Link
-                  href={`/gastos/${item.transactionId}/editar?mes=${currentMonth}`}
+                  href={`/gastos/${item.transactionId}?mes=${currentMonth}`}
                   className={`flex min-w-0 flex-1 items-center justify-between rounded-xl bg-white p-3 shadow-sm active:scale-[0.99] dark:bg-neutral-900 ${
                     item.deleted ? "opacity-50" : ""
                   }`}
@@ -103,9 +101,10 @@ export function InvoiceTabs({
                     </p>
                   </div>
                   <div className="ml-3 flex shrink-0 items-center gap-1">
-                    <span className={`font-semibold ${item.deleted ? "line-through" : ""}`}>
-                      {formatCents(item.amountCents)}
-                    </span>
+                    <Money
+                      cents={item.amountCents}
+                      className={`font-semibold ${item.deleted ? "line-through" : ""}`}
+                    />
                     <ChevronRight size={16} className="text-neutral-400" />
                   </div>
                 </Link>

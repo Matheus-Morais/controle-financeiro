@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { BackLink } from "@/components/back-link";
 import { createClient } from "@/lib/supabase/server";
 import { todayISO } from "@/lib/date";
@@ -31,8 +31,13 @@ export default async function EditarGastoPage({
       supabase.from("categories").select("id, name").order("name"),
     ]);
 
-  // Só editamos gastos à vista/parcelados; recorrentes são tratados em /recorrentes.
-  if (!tx || tx.kind === "recurring") notFound();
+  // Só editamos gastos à vista/parcelados; recorrentes são tratados em
+  // /recorrentes. O recorrente volta para o detalhe, que explica isso e dá o
+  // atalho para a assinatura — antes esta rota era um 404 mudo para ele.
+  if (!tx) notFound();
+  if (tx.kind === "recurring") {
+    redirect(`/gastos/${id}${mes ? `?mes=${mes}` : ""}`);
+  }
 
   const source = tx.card_id ? `card:${tx.card_id}` : `account:${tx.account_id}`;
   const expense: ExpenseDefaults = {
@@ -47,8 +52,8 @@ export default async function EditarGastoPage({
 
   const updateWithId = updateExpense.bind(null, id, mes);
 
-  // Voltar para o cartão que o usuário analisa (com o mês), ou home se for carteira.
-  const backHref = tx.card_id ? `/cartoes/${tx.card_id}${mes ? `?mes=${mes}` : ""}` : "/";
+  // Volta para o detalhe, de onde se chega aqui (e que preserva a competência).
+  const backHref = `/gastos/${id}${mes ? `?mes=${mes}` : ""}`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -67,7 +72,7 @@ export default async function EditarGastoPage({
       />
 
       <p className="px-1 text-center text-xs text-neutral-500">
-        Para excluir, use o botão de lixeira no gasto, na tela do cartão.
+        Para excluir, volte ao detalhe do gasto.
       </p>
     </div>
   );

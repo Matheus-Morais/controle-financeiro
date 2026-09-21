@@ -29,86 +29,20 @@ import {
 import { ConfirmCardModal } from "@/components/confirm-card-modal";
 import { CardSelect } from "@/components/card-select";
 import { MonthStepper } from "@/components/month-stepper";
-import { ImportReviewItem, type EditableItem } from "@/components/import-review-item";
+import { ImportReviewItem } from "@/components/import-review-item";
+import {
+  EXISTING_GROUPS,
+  NEW_GROUPS,
+  TIPO_LABEL,
+  matchCardByIssuer,
+  sumItems,
+  toEditableItems,
+  type Card,
+  type Category,
+  type EditableItem,
+} from "@/lib/import-review";
 
 const MAX_BYTES = 4 * 1024 * 1024;
-
-interface Card {
-  id: string;
-  name: string;
-  last_four: string | null;
-  color: string | null;
-  closing_day: number;
-  due_day: number;
-}
-interface Category {
-  id: string;
-  name: string;
-}
-
-const TIPO_LABEL: Record<ExtractedTipo, string> = {
-  compra: "Compra",
-  credito: "Crédito/estorno",
-  encargo: "Encargo",
-  pagamento: "Pagamento",
-  outro: "Outro",
-};
-
-/** Subgrupos de cada seção, na ordem em que aparecem na tela. */
-const NEW_GROUPS: { key: ReviewGroupKey; label: string }[] = [
-  { key: "new-installment", label: "Parcelados" },
-  { key: "new-single", label: "À vista" },
-  { key: "new-recurring", label: "Recorrentes" },
-];
-// "À vista" só existe aqui quando o mesmo PDF é subido duas vezes; fica por
-// último e, como todo subgrupo, só é renderizado quando tem item.
-const EXISTING_GROUPS: { key: ReviewGroupKey; label: string }[] = [
-  { key: "existing-installment", label: "Parcelados" },
-  { key: "existing-recurring", label: "Recorrentes" },
-  { key: "existing-single", label: "À vista" },
-];
-
-const sumItems = (list: EditableItem[]) =>
-  list.reduce((s, it) => s + (parseBRLToCents(it.valorBrl) ?? 0), 0);
-
-function toEditableItems(inv: ExtractedInvoice, categories: Category[]): EditableItem[] {
-  return inv.itens.map((it, i) => ({
-    id: `it-${i}`,
-    statementDescription: it.descricao,
-    // Nome amigável criado pela IA vira o título editável; cai no bruto se a IA
-    // não conseguiu limpar. O token de parcela é removido de qualquer forma.
-    description: stripInstallmentSuffix(it.nome_amigavel?.trim() || it.descricao, it.parcela),
-    valorBrl: it.valor_brl,
-    purchaseDate: it.data,
-    categoryId: matchCategoryByName(it.categoria_sugerida, categories) ?? "",
-    tipo: it.tipo,
-    parcela: it.parcela,
-    importable: isImportable(it.tipo),
-    include: isImportable(it.tipo),
-    match: null,
-    linkedRecurringId: null,
-    linkedRecurringName: null,
-    suggestedRecurring: it.sugerido_recorrente,
-    markAsRecurring: false,
-  }));
-}
-
-/**
- * Palpite de cartão por emissor/bandeira, usado só quando o PDF não traz os 4
- * dígitos. Casa quando o nome de um cartão cadastrado aparece no texto de
- * emissor/bandeira da fatura (ou vice-versa) e é o ÚNICO candidato — ambíguo não
- * conta. É apenas pré-seleção: nunca marca o cartão como confiável (isso é
- * exclusivo do match por dígitos), então o usuário sempre confirma no modal.
- */
-function matchCardByIssuer(inv: ExtractedInvoice, cards: Card[]): Card | undefined {
-  const hay = normalizeText(`${inv.emissor ?? ""} ${inv.bandeira ?? ""}`).trim();
-  if (hay.length < 3) return undefined;
-  const matches = cards.filter((c) => {
-    const name = normalizeText(c.name);
-    return name.length >= 3 && (hay.includes(name) || name.includes(hay));
-  });
-  return matches.length === 1 ? matches[0] : undefined;
-}
 
 export function ImportInvoice({
   cards,
