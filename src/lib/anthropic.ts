@@ -18,7 +18,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { extractedInvoiceSchema, type ExtractedInvoice } from "./invoice-import";
 
-const MODEL = "claude-opus-4-8";
+/**
+ * Extração é uma tarefa de leitura estruturada, não de raciocínio aberto: o
+ * Opus 5 custa o mesmo por token que o 4.8 (US$ 5/US$ 25 por milhão) e lê
+ * melhor, e `effort: "low"` mantém o gasto de saída no mesmo patamar — no 4.8
+ * o thinking vinha desligado por padrão, no 5 vem ligado.
+ */
+const MODEL = "claude-opus-5";
 
 /** JSON Schema da saída (structured outputs): tudo obrigatório, sem props extras. */
 const OUTPUT_SCHEMA = {
@@ -139,7 +145,7 @@ export async function extractInvoice(
         ],
       },
     ],
-    output_config: { format: { type: "json_schema", schema: OUTPUT_SCHEMA } },
+    output_config: { format: { type: "json_schema", schema: OUTPUT_SCHEMA }, effort: "low" },
   });
 
   if (response.stop_reason === "refusal") {
