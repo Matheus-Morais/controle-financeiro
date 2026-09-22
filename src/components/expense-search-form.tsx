@@ -39,7 +39,7 @@ export function ExpenseSearchForm({
     <form
       ref={formRef}
       action="/gastos"
-      className="flex flex-col gap-2 rounded-xl bg-white p-3 shadow-sm dark:bg-neutral-900"
+      className="grid gap-2 rounded-xl bg-white p-3 shadow-sm md:grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1fr)_auto] md:items-end dark:bg-neutral-900"
     >
       <label className="flex items-center gap-2 rounded-lg bg-neutral-100 px-3 py-2 dark:bg-neutral-800">
         <Search size={16} className="shrink-0 text-neutral-400" />
@@ -86,7 +86,7 @@ export function ExpenseSearchForm({
         </select>
       </Field>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 md:min-w-36">
         <button
           type="submit"
           className="flex-1 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white"

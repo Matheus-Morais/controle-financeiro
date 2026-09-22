@@ -48,7 +48,7 @@ export default async function OrcamentoPage() {
         </div>
       )}
 
-      <div className="flex flex-col gap-2">
+      <div className="grid gap-2 md:grid-cols-2">
         {(categories ?? []).map((c) => (
           <div key={c.id} className="flex items-center gap-1">
             <div className="flex-1">

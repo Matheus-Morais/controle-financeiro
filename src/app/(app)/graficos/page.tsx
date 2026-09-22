@@ -95,7 +95,10 @@ export default async function GraficosPage({
       <MonthNav basePath="/graficos" refMonth={month} />
 
       {hasAnything ? (
-        <div key={month} className="flex flex-col gap-4 animate-month-in motion-reduce:animate-none">
+        <div
+          key={month}
+          className="grid gap-4 animate-month-in motion-reduce:animate-none lg:grid-cols-2"
+        >
           <Card
             title="Entradas × saídas"
             hint={`Últimos ${HISTORY_MONTHS} meses, por competência`}
