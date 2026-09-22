@@ -79,7 +79,7 @@ export default async function CartoesPage() {
       </div>
 
       {cards && cards.length > 0 ? (
-        <ul className="flex flex-col gap-3">
+        <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {cards.map((card) => {
             const openMonth = openByCard.get(card.id) ?? currentMonth;
             const [ry, rm0] = ymd(openMonth);

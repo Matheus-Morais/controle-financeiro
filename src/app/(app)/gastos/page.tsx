@@ -175,7 +175,7 @@ export default async function GastosPage({
       </p>
 
       {items.length > 0 ? (
-        <ul className="flex flex-col gap-2">
+        <ul className="grid gap-2 lg:grid-cols-2">
           {items.map((it) => (
             <li key={it.installmentId}>
               <Link

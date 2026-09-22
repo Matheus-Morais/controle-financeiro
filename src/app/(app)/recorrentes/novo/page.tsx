@@ -18,7 +18,7 @@ export default async function NovaRecorrentePage() {
   const currentMonth = todayISO(await sessionTimezone(supabase)).slice(0, 7); // YYYY-MM
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 lg:max-w-4xl">
       <div className="flex items-center gap-2">
         <BackLink href="/recorrentes" label="Voltar para as recorrentes" />
         <h1 className="text-2xl font-bold">Nova recorrente</h1>

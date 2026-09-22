@@ -110,7 +110,7 @@ export default async function DashboardPage({
 
       <div key={month} className="flex flex-col gap-6 animate-month-in motion-reduce:animate-none">
         {/* Fluxo de caixa do mês */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3 md:max-w-2xl">
           <SummaryCard
             icon={<TrendingUp className="text-brand" size={18} />}
             label="Entradas"
@@ -177,7 +177,7 @@ export default async function DashboardPage({
 
       {/* Duas linhas de três: com o atalho da busca eram seis, e seis colunas
           numa tela de celular deixam o rótulo ilegível. */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-3 gap-2 md:grid-cols-6 md:gap-3">
         <QuickLink href="/gastos" icon={<Search size={20} />} label="Buscar" />
         <QuickLink href="/recebimentos" icon={<PiggyBank size={20} />} label="Renda" />
         <QuickLink href="/contas" icon={<Receipt size={20} />} label="Contas" />

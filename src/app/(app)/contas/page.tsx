@@ -78,7 +78,7 @@ export default async function ContasPage({
       </div>
 
       {items.length > 0 ? (
-        <ul className="flex flex-col gap-2">
+        <ul className="grid gap-2 lg:grid-cols-2">
           {items.map((it) => {
             const overdue = !it.paid && it.dueDate != null && it.dueDate < today;
             return (

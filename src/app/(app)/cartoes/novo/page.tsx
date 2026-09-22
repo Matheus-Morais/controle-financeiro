@@ -4,7 +4,7 @@ import { createCard } from "../actions";
 
 export default function NovoCartaoPage() {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 lg:max-w-3xl">
       <div className="flex items-center gap-2">
         <BackLink href="/cartoes" label="Voltar para os cartões" />
         <h1 className="text-2xl font-bold">Novo cartão</h1>

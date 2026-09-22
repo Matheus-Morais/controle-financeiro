@@ -91,7 +91,7 @@ export default async function RecorrentesPage() {
           {activeRows.length > 0 && (
             <section className="flex flex-col gap-2">
               <h2 className="font-semibold">Ativas</h2>
-              <ul className="flex flex-col gap-2">
+              <ul className="grid gap-2 lg:grid-cols-2">
                 {activeRows.map((r) => (
                   <RecurringCard
                     key={r.id}
@@ -107,7 +107,7 @@ export default async function RecorrentesPage() {
           {pausedRows.length > 0 && (
             <section className="flex flex-col gap-2">
               <h2 className="font-semibold text-neutral-500">Pausadas</h2>
-              <ul className="flex flex-col gap-2">
+              <ul className="grid gap-2 lg:grid-cols-2">
                 {pausedRows.map((r) => (
                   <RecurringCard
                     key={r.id}

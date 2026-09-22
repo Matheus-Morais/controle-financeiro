@@ -69,9 +69,12 @@ export function ExpenseForm({
         : accounts[0]
           ? `account:${accounts[0].id}`
           : "");
+  const [source, setSource] = useState(defaultSource);
+  const selectedSource = sourceOptions(cards, accounts).find((option) => option.value === source);
 
   return (
-    <form action={formAction} className="flex flex-col gap-4">
+    <form action={formAction} className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
+      <div className="flex flex-col gap-4">
       {/* Valor em destaque: é o campo que o usuário vem preencher, e antes tinha
           o mesmo peso visual da descrição. */}
       <div className="flex flex-col items-center gap-1 rounded-2xl bg-white px-4 py-5 shadow-sm ring-1 ring-neutral-200/70 dark:bg-neutral-900 dark:ring-white/5">
@@ -132,7 +135,8 @@ export function ExpenseForm({
           </span>
           <Select
             name="source"
-            defaultValue={defaultSource}
+            value={source}
+            onChange={setSource}
             title="Onde foi o gasto"
             ariaLabel="Onde"
             options={sourceOptions(cards, accounts)}
@@ -202,12 +206,44 @@ export function ExpenseForm({
           />
         </label>
       </div>
+      </div>
 
-      {state?.error && <p className="text-sm text-red-600">{state.error}</p>}
+      <aside className="sticky top-24 hidden flex-col gap-3 lg:flex">
+        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-neutral-200/70 dark:bg-neutral-900 dark:ring-white/5">
+          <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Resumo</p>
+          <p className="mt-2 text-3xl font-bold tabular-nums">{formatCents(cents)}</p>
+          <dl className="mt-4 flex flex-col gap-2 border-t border-neutral-100 pt-3 text-sm dark:border-neutral-800">
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-neutral-500">Onde</dt>
+              <dd className="truncate text-right font-medium">{selectedSource?.label ?? "—"}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-neutral-500">Pagamento</dt>
+              <dd className="font-medium">{kind === "single" ? "À vista" : "Parcelado"}</dd>
+            </div>
+            {kind === "installment" && (
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-neutral-500">Parcelas</dt>
+                <dd className="font-medium">
+                  {count} × {formatCents(count > 0 ? Math.round(cents / count) : 0)}
+                </dd>
+              </div>
+            )}
+          </dl>
+        </div>
+
+        {state?.error && <p className="text-sm text-red-600">{state.error}</p>}
+
+        <SubmitButton pendingLabel="Salvando…">
+          {expense ? "Salvar alterações" : "Salvar gasto"}
+        </SubmitButton>
+      </aside>
+
+      {state?.error && <p className="text-sm text-red-600 lg:hidden">{state.error}</p>}
 
       {/* Botão fixo acima da bottom-nav: antes rolava junto e ficava abaixo da
           dobra assim que o bloco de parcelamento aparecia. */}
-      <div className="sticky bottom-24 -mx-4 mt-1 bg-gradient-to-t from-neutral-50 via-neutral-50 to-transparent px-4 pb-1 pt-10 dark:from-neutral-950 dark:via-neutral-950">
+      <div className="sticky bottom-24 -mx-4 mt-1 bg-gradient-to-t from-neutral-50 via-neutral-50 to-transparent px-4 pb-1 pt-10 dark:from-neutral-950 dark:via-neutral-950 lg:hidden">
         <SubmitButton pendingLabel="Salvando…">
           {expense ? "Salvar alterações" : "Salvar gasto"}
         </SubmitButton>

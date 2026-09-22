@@ -48,7 +48,7 @@ export default async function RecebimentosPage({
       </div>
 
       {incomes && incomes.length > 0 ? (
-        <ul className="flex flex-col gap-2">
+        <ul className="grid gap-2 lg:grid-cols-2">
           {incomes.map((inc) => {
             // Encerrada = a repetição para nesta competência (ou antes). O
             // registro do mês continua existindo; só não se propaga adiante.

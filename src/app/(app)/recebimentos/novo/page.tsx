@@ -12,7 +12,7 @@ export default async function NovoRecebimentoPage() {
   const today = todayISO(await sessionTimezone(supabase));
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 lg:max-w-3xl">
       <div className="flex items-center gap-2">
         <BackLink href="/recebimentos" label="Voltar para os recebimentos" />
         <h1 className="text-2xl font-bold">Novo recebimento</h1>
