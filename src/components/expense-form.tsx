@@ -41,6 +41,7 @@ export function ExpenseForm({
   categories,
   today,
   expense,
+  defaultCardId,
 }: {
   action: Action;
   cards: Option[];
@@ -48,6 +49,7 @@ export function ExpenseForm({
   categories: Option[];
   today: string;
   expense?: ExpenseDefaults;
+  defaultCardId?: string;
 }) {
   const [state, formAction] = useActionState(action, undefined);
   const [amount, setAmount] = useState(expense ? centsToInput(expense.amountCents) : "");
@@ -60,7 +62,13 @@ export function ExpenseForm({
 
   const defaultSource =
     expense?.source ??
-    (cards[0] ? `card:${cards[0].id}` : accounts[0] ? `account:${accounts[0].id}` : "");
+    (defaultCardId && cards.some((card) => card.id === defaultCardId)
+      ? `card:${defaultCardId}`
+      : cards[0]
+        ? `card:${cards[0].id}`
+        : accounts[0]
+          ? `account:${accounts[0].id}`
+          : "");
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
