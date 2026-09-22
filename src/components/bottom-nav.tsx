@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { CreditCard, Home, Plus, Settings, Wallet } from "lucide-react";
+import { newExpenseHref } from "@/lib/navigation";
 
 const items = [
   { href: "/", label: "Início", icon: Home },
@@ -14,17 +15,13 @@ const items = [
 
 export function BottomNav() {
   const pathname = usePathname();
-  const cardId = pathname.match(/^\/cartoes\/([^/]+)$/)?.[1];
-  const addExpenseHref = cardId
-    ? `/gastos/novo?cartao=${encodeURIComponent(cardId)}`
-    : "/gastos/novo";
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200 bg-white/95 pb-safe-bottom backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/95">
       <ul className="mx-auto flex max-w-md items-center justify-around px-2">
         {items.map(({ href, label, icon: Icon, primary }) => {
           const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
-          const itemHref = href === "/gastos/novo" ? addExpenseHref : href;
+          const itemHref = href === "/gastos/novo" ? newExpenseHref(pathname) : href;
           return (
             <li key={href}>
               <Link
