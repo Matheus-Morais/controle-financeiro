@@ -15,7 +15,7 @@ export default async function EditarCartaoPage({ params }: { params: Promise<{ i
   const deleteWithId = deleteCard.bind(null, id);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 lg:max-w-3xl">
       <div className="flex items-center gap-2">
         <BackLink href={`/cartoes/${id}`} label="Voltar para o cartão" />
         <h1 className="text-2xl font-bold">Editar cartão</h1>

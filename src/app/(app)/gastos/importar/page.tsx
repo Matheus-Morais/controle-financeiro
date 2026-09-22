@@ -32,7 +32,7 @@ export default async function ImportarFaturaPage({
   const backHref = fromCard ? `/cartoes/${fromCard}` : "/gastos/novo";
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 lg:max-w-5xl">
       <div className="flex items-center gap-2">
         <BackLink href={backHref} />
         <h1 className="text-2xl font-bold">Importar fatura</h1>

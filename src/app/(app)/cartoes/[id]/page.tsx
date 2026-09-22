@@ -141,7 +141,7 @@ export default async function CartaoDetailPage({
   ].filter(Boolean) as string[];
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 lg:max-w-5xl">
       <div className="flex items-center gap-2">
         <BackLink href="/cartoes" label="Voltar para os cartões" />
         <h1 className="min-w-0 flex-1 truncate text-2xl font-bold">{card.name}</h1>

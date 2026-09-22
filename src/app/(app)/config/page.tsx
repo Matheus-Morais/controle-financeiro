@@ -18,7 +18,7 @@ export default async function ConfigPage() {
     .single();
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 lg:max-w-5xl">
       <h1 className="text-2xl font-bold">Ajustes</h1>
 
       <section className="rounded-2xl bg-white p-4 shadow-sm dark:bg-neutral-900">
