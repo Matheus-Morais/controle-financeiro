@@ -43,7 +43,7 @@ export default async function RecorrentesPage() {
   // Cartões ativos como destino da troca de cartão.
   const activeCards = (cards ?? [])
     .filter((c) => c.active)
-    .map((c) => ({ id: c.id, name: c.name }));
+    .map((c) => ({ id: c.id, name: c.name, color: c.color }));
   const monthLabel = formatMonthLabel(currentReferenceMonth(await sessionTimezone(supabase)));
 
   const rows: Row[] = (recurrings ?? []).map((r) => {
@@ -149,7 +149,7 @@ function RecurringCard({
   monthLabel,
 }: {
   row: Row;
-  activeCards: { id: string; name: string }[];
+  activeCards: { id: string; name: string; color: string | null }[];
   monthLabel: string;
 }) {
   return (

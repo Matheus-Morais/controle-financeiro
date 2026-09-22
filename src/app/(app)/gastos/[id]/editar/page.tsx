@@ -26,9 +26,9 @@ export default async function EditarGastoPage({
         )
         .eq("id", id)
         .single(),
-      supabase.from("cards").select("id, name").eq("active", true).order("created_at"),
-      supabase.from("accounts").select("id, name").order("created_at"),
-      supabase.from("categories").select("id, name").order("name"),
+      supabase.from("cards").select("id, name, color").eq("active", true).order("created_at"),
+      supabase.from("accounts").select("id, name, color").order("created_at"),
+      supabase.from("categories").select("id, name, color").order("name"),
     ]);
 
   // Só editamos gastos à vista/parcelados; recorrentes são tratados em

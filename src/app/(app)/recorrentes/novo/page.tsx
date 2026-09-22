@@ -9,9 +9,9 @@ import { createRecurring } from "../actions";
 export default async function NovaRecorrentePage() {
   const supabase = await createClient();
   const [{ data: cards }, { data: accounts }, { data: categories }] = await Promise.all([
-    supabase.from("cards").select("id, name").eq("active", true).order("created_at"),
-    supabase.from("accounts").select("id, name").order("created_at"),
-    supabase.from("categories").select("id, name").order("name"),
+    supabase.from("cards").select("id, name, color").eq("active", true).order("created_at"),
+    supabase.from("accounts").select("id, name, color").order("created_at"),
+    supabase.from("categories").select("id, name, color").order("name"),
   ]);
 
   const hasSource = (cards?.length ?? 0) + (accounts?.length ?? 0) > 0;

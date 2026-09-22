@@ -22,7 +22,7 @@ export default async function ImportarFaturaPage({
       .select("id, name, last_four, color, closing_day, due_day")
       .eq("active", true)
       .order("created_at"),
-    supabase.from("categories").select("id, name").order("name"),
+    supabase.from("categories").select("id, name, color").order("name"),
   ]);
 
   const hasCard = (cards?.length ?? 0) > 0;

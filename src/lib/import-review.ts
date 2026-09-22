@@ -55,6 +55,7 @@ export interface Card {
 export interface Category {
   id: string;
   name: string;
+  color?: string | null;
 }
 
 export const TIPO_LABEL: Record<ExtractedTipo, string> = {

@@ -171,7 +171,11 @@ export function ImportReviewItem({
             ariaLabel="Categoria"
             options={[
               { value: "", label: "Sem categoria" },
-              ...categories.map((c) => ({ value: c.id, label: c.name })),
+              ...categories.map((c) => ({
+                value: c.id,
+                label: c.name,
+                color: c.color ?? "#94a3b8",
+              })),
             ]}
           />
           <div className="flex items-center justify-between gap-2">
