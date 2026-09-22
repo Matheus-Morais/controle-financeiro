@@ -7,7 +7,12 @@ import { sessionTimezone } from "@/lib/user-time";
 import { ExpenseForm } from "@/components/expense-form";
 import { createExpense } from "./actions";
 
-export default async function NovoGastoPage() {
+export default async function NovoGastoPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ cartao?: string }>;
+}) {
+  const { cartao } = await searchParams;
   const supabase = await createClient();
 
   const [{ data: cards }, { data: accounts }, { data: categories }] = await Promise.all([
@@ -44,6 +49,7 @@ export default async function NovoGastoPage() {
           accounts={accounts ?? []}
           categories={categories ?? []}
           today={today}
+          defaultCardId={cartao}
         />
       ) : (
         <Link
