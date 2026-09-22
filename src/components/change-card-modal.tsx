@@ -8,6 +8,7 @@ import { changeRecurringCard } from "@/app/(app)/recorrentes/actions";
 interface Card {
   id: string;
   name: string;
+  color: string | null;
 }
 
 interface Props {
@@ -81,7 +82,11 @@ export function ChangeCardModal({
                   onChange={setNewCardId}
                   title="Novo cartão"
                   ariaLabel="Novo cartão"
-                  options={options.map((c) => ({ value: c.id, label: c.name }))}
+                  options={options.map((c) => ({
+                    value: c.id,
+                    label: c.name,
+                    color: c.color ?? "#16a34a",
+                  }))}
                 />
               </label>
 
