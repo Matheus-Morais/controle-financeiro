@@ -42,8 +42,27 @@ export function NotificationSettings({
     setMounted(true);
     const ok = pushSupported();
     setSupported(ok);
-    if (ok) getExistingSubscription().then((s) => setSubscribed(!!s));
+    if (ok) syncExistingSubscription();
   }, []);
+
+  /**
+   * O navegador pode se achar inscrito sem o servidor ter o registro (gravação
+   * que falhou, "Reiniciar conta", limpeza de endpoint expirado). Confiar só no
+   * navegador deixava a tela em "Enviar teste" para um aparelho que nunca
+   * recebe nada. Reenviar a subscription é idempotente (upsert por endpoint)
+   * e faz o servidor voltar a conhecê-la.
+   */
+  async function syncExistingSubscription() {
+    try {
+      const sub = await getExistingSubscription();
+      if (!sub) return;
+      const res = await savePushSubscription({ ...sub, userAgent: navigator.userAgent });
+      if (res?.error) setStatus(`Erro ao sincronizar este dispositivo: ${res.error}`);
+      else setSubscribed(true);
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Falha ao verificar as notificações.");
+    }
+  }
 
   async function enablePush() {
     setBusy(true);
@@ -85,9 +104,14 @@ export function NotificationSettings({
   async function testPush() {
     setBusy(true);
     setStatus(null);
-    const res = await sendTestPush();
-    setStatus(res.error ? `Erro: ${res.error}` : `Notificação enviada para ${res.sent} dispositivo(s).`);
-    setBusy(false);
+    try {
+      const res = await sendTestPush();
+      setStatus(res.error ? `Erro: ${res.error}` : `Notificação enviada para ${res.sent} dispositivo(s).`);
+    } catch {
+      setStatus("Não foi possível falar com o servidor. Recarregue a página e tente de novo.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   function persistPrefs(next: Partial<{ weeklyEnabled: boolean; weeklyDay: number; monthlyEnabled: boolean }>) {

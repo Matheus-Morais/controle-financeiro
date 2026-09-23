@@ -106,6 +106,7 @@ export async function sendTestPush(): Promise<{ error?: string; sent?: number }>
   if (!subs?.length) return { error: "Nenhum dispositivo ativado. Ative as notificações primeiro." };
 
   let sent = 0;
+  const failures: string[] = [];
   for (const s of subs) {
     const res = await sendPush(s, {
       title: "Notificação de teste 🔔",
@@ -114,9 +115,23 @@ export async function sendTestPush(): Promise<{ error?: string; sent?: number }>
       tag: "test",
     });
     if (res.ok) sent++;
+    else failures.push(describePushFailure(res.status, res.gone));
     if (res.gone) await supabase.from("push_subscriptions").delete().eq("endpoint", s.endpoint);
   }
+
+  // Sem nenhuma entrega, "enviada para 0 dispositivos" não diz nada: devolve o motivo.
+  if (sent === 0) return { error: [...new Set(failures)].join(" ") };
   return { sent };
+}
+
+/** Traduz a falha do push service em uma instrução que o usuário consegue seguir. */
+function describePushFailure(status: number | undefined, gone: boolean): string {
+  if (gone) return "Este dispositivo expirou e foi removido — toque em Ativar novamente.";
+  if (status === 401 || status === 403) {
+    return "O servidor de push recusou a assinatura (chaves VAPID não conferem). Desative e ative de novo.";
+  }
+  if (status) return `O servidor de push recusou o envio (HTTP ${status}).`;
+  return "Falha ao enviar a notificação. Tente novamente em instantes.";
 }
 
 /**
