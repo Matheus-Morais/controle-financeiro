@@ -464,6 +464,11 @@ const CATEGORY_SYNONYMS: Record<string, string> = {
   dentista: "saude",
   cinema: "lazer",
   viagem: "lazer",
+  hotel: "viagem",
+  hospedagem: "viagem",
+  airbnb: "viagem",
+  voo: "viagem",
+  passagem: "viagem",
   streaming: "assinaturas",
   netflix: "assinaturas",
   spotify: "assinaturas",
@@ -475,6 +480,35 @@ const CATEGORY_SYNONYMS: Record<string, string> = {
   escola: "educacao",
   faculdade: "educacao",
   livro: "educacao",
+  pet: "pets",
+  petshop: "pets",
+  veterinario: "pets",
+  veterinaria: "pets",
+  roupa: "vestuario",
+  roupas: "vestuario",
+  calcado: "vestuario",
+  calcados: "vestuario",
+  tenis: "vestuario",
+  moda: "vestuario",
+  salao: "cuidados pessoais",
+  barbearia: "cuidados pessoais",
+  barbeiro: "cuidados pessoais",
+  manicure: "cuidados pessoais",
+  beleza: "cuidados pessoais",
+  estetica: "cuidados pessoais",
+  cosmeticos: "cuidados pessoais",
+  perfumaria: "cuidados pessoais",
+  iof: "impostos e taxas",
+  tarifa: "impostos e taxas",
+  anuidade: "impostos e taxas",
+  juros: "impostos e taxas",
+  multa: "impostos e taxas",
+  celular: "contas/utilidades",
+  telefone: "contas/utilidades",
+  telefonia: "contas/utilidades",
+  mercadolivre: "compras online",
+  shopee: "compras online",
+  aliexpress: "compras online",
 };
 
 /**
@@ -498,6 +532,13 @@ export function matchCategoryByName(
   if (canonical) {
     const viaSynonym = byName.get(canonical);
     if (viaSynonym) return viaSynonym;
+
+    // Se o usuário não tiver a categoria canônica, tenta o fallback secundário (ex.: hotel → viagem → lazer)
+    const secondary = CATEGORY_SYNONYMS[canonical];
+    if (secondary) {
+      const viaSecondary = byName.get(secondary);
+      if (viaSecondary) return viaSecondary;
+    }
   }
   return null;
 }

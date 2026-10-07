@@ -38,6 +38,23 @@ describe("matchCategoryByName", () => {
     expect(matchCategoryByName("uber", cats)).toBe("c-transp");
     expect(matchCategoryByName("ifood", cats)).toBe("c-alim");
   });
+  it("resolve sinônimos expandidos e fallback secundário", () => {
+    const expandedCats = [
+      ...cats,
+      { id: "c-pets", name: "Pets" },
+      { id: "c-vest", name: "Vestuário" },
+      { id: "c-viagem", name: "Viagem" },
+      { id: "c-imp", name: "Impostos e taxas" },
+    ];
+    expect(matchCategoryByName("veterinario", expandedCats)).toBe("c-pets");
+    expect(matchCategoryByName("roupas", expandedCats)).toBe("c-vest");
+    expect(matchCategoryByName("hotel", expandedCats)).toBe("c-viagem");
+    expect(matchCategoryByName("anuidade", expandedCats)).toBe("c-imp");
+
+    // Fallback secundário: se não tem Viagem, hotel cai em Lazer (se houver Lazer)
+    const withLazer = [...cats, { id: "c-lazer", name: "Lazer" }];
+    expect(matchCategoryByName("hotel", withLazer)).toBe("c-lazer");
+  });
   it("retorna null para desconhecido, vazio ou sem categorias", () => {
     expect(matchCategoryByName("cripto", cats)).toBeNull();
     expect(matchCategoryByName("", cats)).toBeNull();
