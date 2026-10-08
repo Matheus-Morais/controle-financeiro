@@ -101,3 +101,47 @@ export function formatContextToPromptText(ctx: FinancialSanitizedContext): strin
 
   return parts.join("\n");
 }
+
+/**
+ * Constrói a lista de mensagens para o provedor de IA com histórico limpo,
+ * garantindo alternância correta de turnos e que mensagens órfãs não quebrem a conversa.
+ */
+export function buildChatMessages(
+  history: Array<{ role?: unknown; content?: unknown }> | undefined,
+  currentPrompt: string,
+  contextText: string,
+): Array<{ role: "user" | "assistant"; content: string }> {
+  const sanitizedHistory: Array<{ role: "user" | "assistant"; content: string }> = [];
+
+  if (Array.isArray(history)) {
+    for (const h of history.slice(-6)) {
+      if ((h.role === "user" || h.role === "assistant") && typeof h.content === "string") {
+        const text = h.content.trim();
+        if (!text) continue;
+
+        const last = sanitizedHistory[sanitizedHistory.length - 1];
+        if (last && last.role === h.role) {
+          last.content += `\n\n${text}`;
+        } else {
+          sanitizedHistory.push({ role: h.role, content: text });
+        }
+      }
+    }
+  }
+
+  // Remove qualquer turno 'user' pendente no final do histórico para não colidir com o novo prompt
+  while (sanitizedHistory.length > 0 && sanitizedHistory[sanitizedHistory.length - 1].role === "user") {
+    sanitizedHistory.pop();
+  }
+
+  const promptText =
+    currentPrompt.trim() ||
+    "Faça um raio-x completo do meu mês e aponte ralos de dinheiro e plano de ação.";
+
+  const userContent =
+    sanitizedHistory.length === 0
+      ? `${contextText}\n\nSOLICITAÇÃO DO USUÁRIO:\n${promptText}`
+      : `DADOS ATUALIZADOS DO MÊS:\n${contextText}\n\nPERGUNTA DO USUÁRIO:\n${promptText}`;
+
+  return [...sanitizedHistory, { role: "user", content: userContent }];
+}
