@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { formatCents } from "@/lib/money";
-import { formatContextToPromptText } from "./prompts";
+import { buildChatMessages, formatContextToPromptText } from "./prompts";
 import type { FinancialSanitizedContext } from "./types";
 
 describe("formatContextToPromptText", () => {
@@ -53,5 +53,44 @@ describe("formatContextToPromptText", () => {
     expect(text).toContain(`Alimentação: ${formatCents(80000)} [Meta/Limite: ${formatCents(60000)}]`);
     expect(text).toContain(`Netflix: ${formatCents(5590)} (Dia de cobrança: 15)`);
     expect(text).toContain(`Supermercado [Alimentação]: ${formatCents(45000)}`);
+  });
+});
+
+describe("buildChatMessages", () => {
+  it("monta mensagem inicial combinando contexto e prompt padrão", () => {
+    const messages = buildChatMessages(undefined, "", "CONTEXTO FINANCEIRO");
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].role).toBe("user");
+    expect(messages[0].content).toContain("CONTEXTO FINANCEIRO");
+    expect(messages[0].content).toContain("SOLICITAÇÃO DO USUÁRIO:");
+  });
+
+  it("elimina turnos de usuário pendentes no final do histórico para não gerar duplicatas consecutivas", () => {
+    const history = [
+      { role: "user", content: "Primeira tentativa que falhou" },
+    ];
+
+    const messages = buildChatMessages(history, "Nova pergunta", "CONTEXTO ATUAL");
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].role).toBe("user");
+    expect(messages[0].content).toContain("Nova pergunta");
+  });
+
+  it("mantém alternância normal quando o assistente respondeu previamente", () => {
+    const history = [
+      { role: "user", content: "Quanto gastei em delivery?" },
+      { role: "assistant", content: "Você gastou R$ 350,00." },
+    ];
+
+    const messages = buildChatMessages(history, "E no mês passado?", "CONTEXTO ATUAL");
+
+    expect(messages).toHaveLength(3);
+    expect(messages[0].role).toBe("user");
+    expect(messages[1].role).toBe("assistant");
+    expect(messages[2].role).toBe("user");
+    expect(messages[2].content).toContain("E no mês passado?");
+    expect(messages[2].content).toContain("DADOS ATUALIZADOS DO MÊS:");
   });
 });

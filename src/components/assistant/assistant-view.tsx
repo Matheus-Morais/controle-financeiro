@@ -176,6 +176,10 @@ export function AssistantView({ refMonth, monthLabel }: AssistantViewProps) {
     } catch (err: any) {
       console.error("[assistant] erro:", err);
       setError(err?.message || "Ocorreu um erro ao gerar a análise.");
+      setMessages((prev) => prev.filter((m) => m.id !== userMessage.id));
+      if (!customPrompt) {
+        setInput(textToSend);
+      }
     } finally {
       setLoading(false);
     }
@@ -260,9 +264,19 @@ export function AssistantView({ refMonth, monthLabel }: AssistantViewProps) {
 
       {/* Mensagem de Erro se houver */}
       {error && (
-        <div className="flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-600 dark:text-red-400">
-          <AlertTriangle size={16} className="shrink-0" />
-          <span>{error}</span>
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-600 dark:text-red-400">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={16} className="shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            className="rounded px-1.5 py-0.5 text-xs text-red-500/80 transition hover:bg-red-500/10 hover:text-red-700 dark:hover:text-red-300"
+            aria-label="Dispensar aviso de erro"
+          >
+            ✕
+          </button>
         </div>
       )}
 
