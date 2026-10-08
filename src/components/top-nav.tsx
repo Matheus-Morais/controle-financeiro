@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CreditCard, Home, Plus, Settings, Wallet, WalletCards } from "lucide-react";
+import { CreditCard, Home, Plus, Settings, Sparkles, Wallet, WalletCards } from "lucide-react";
 import { newExpenseHref } from "@/lib/navigation";
 
 const items = [
   { href: "/", label: "Início", icon: Home },
   { href: "/cartoes", label: "Cartões", icon: CreditCard },
   { href: "/gastos", label: "Gastos", icon: WalletCards },
+  { href: "/assistente", label: "Assistente IA", icon: Sparkles },
   { href: "/recebimentos", label: "Renda", icon: Wallet },
   { href: "/config", label: "Ajustes", icon: Settings },
 ];

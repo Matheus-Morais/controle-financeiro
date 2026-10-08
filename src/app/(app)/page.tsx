@@ -1,11 +1,13 @@
 import Link from "next/link";
 import {
+  ArrowRight,
   ChartColumn,
   CreditCard,
   PiggyBank,
   Receipt,
   Repeat,
   Search,
+  Sparkles,
   Target,
   TrendingDown,
   TrendingUp,
@@ -130,6 +132,27 @@ export default async function DashboardPage({
             <Money cents={flow.leftover} />
           </p>
         </div>
+
+        {/* Diagnóstico inteligente com IA */}
+        <Link
+          href={`/assistente?mes=${month}`}
+          className="flex items-center justify-between gap-3 rounded-2xl border border-brand/20 bg-gradient-to-r from-brand/5 via-brand/10 to-transparent p-4 shadow-sm transition active:scale-[0.99] hover:border-brand/40"
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand text-white shadow-sm">
+              <Sparkles size={20} />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                Diagnóstico com IA
+              </p>
+              <p className="text-xs text-neutral-500">
+                Audite ralos de dinheiro, metas e economias deste mês
+              </p>
+            </div>
+          </div>
+          <ArrowRight size={18} className="shrink-0 text-brand" />
+        </Link>
 
         {nothingThisMonth && (
           <p className="py-4 text-center text-sm text-neutral-500">Sem movimentações neste mês.</p>
