@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { Money } from "@/components/money";
 import { formatDayMonth } from "@/lib/date";
+import { sortInvoiceItems } from "@/lib/invoice-items";
 import { ConvertToRecurringButton } from "@/components/convert-to-recurring-button";
 import { DeleteInstallmentButton } from "@/components/delete-installment-button";
 
@@ -38,8 +39,8 @@ export function InvoiceTabs({
   cardId: string;
 }) {
   const [active, setActive] = useState<TabKey>("installment");
-  // Ativos primeiro (na ordem original); excluídos no fim.
-  const items = [...groups[active]].sort((a, b) => Number(a.deleted) - Number(b.deleted));
+  // Compra mais recente primeiro; excluídos no fim.
+  const items = sortInvoiceItems(groups[active]);
 
   return (
     <div className="flex flex-col gap-3">
