@@ -6,6 +6,7 @@ import { currentReferenceMonth, formatDayMonth } from "@/lib/date";
 import { sessionTimezone } from "@/lib/user-time";
 import { invoiceRefForMonth, ymd } from "@/lib/invoice";
 import { resolveOpenMonths } from "@/lib/card-invoices";
+import { categoriesByTransaction } from "@/lib/invoice-categories";
 import { Money } from "@/components/money";
 import { HideValuesToggle } from "@/components/hide-values-toggle";
 import { InvoiceTabs, type InvoiceItem } from "@/components/invoice-tabs";
@@ -91,8 +92,15 @@ export default async function CartaoDetailPage({
   //
   // `invoice_items` já traz a transação junta e inclui as parcelas excluídas
   // (soft-delete): elas continuam visíveis, esmaecidas e no fim da lista.
-  const [{ data: items }, { data: invoice }, availableCents] = await Promise.all([
+  //
+  // A categoria não vem de `invoice_items`: é buscada logo que os itens chegam, e
+  // essa busca corre em paralelo com a capa e o limite (não alonga a renderização).
+  // `Promise.resolve` faz o builder disparar UMA vez e deixa reaproveitar o resultado.
+  const itemsQuery = Promise.resolve(
     supabase.rpc("invoice_items", { p_card_id: id, p_ref_month: refMonth }),
+  );
+  const [{ data: items }, { data: invoice }, availableCents, categories] = await Promise.all([
+    itemsQuery,
     supabase
       .from("invoices")
       .select("id, closing_date, due_date, status")
@@ -103,6 +111,12 @@ export default async function CartaoDetailPage({
     // as parcelas vivas das faturas ainda EM ABERTO (as pagas já saíram do limite).
     // Só aparece quando o usuário informou o limite no cadastro.
     availableLimit(supabase, id, card.credit_limit_cents),
+    itemsQuery.then(({ data }) =>
+      categoriesByTransaction(
+        supabase,
+        (data ?? []).map((it) => it.transaction_id),
+      ),
+    ),
   ]);
 
   const groups: Record<Kind, InvoiceItem[]> = { installment: [], recurring: [], single: [] };
@@ -119,6 +133,7 @@ export default async function CartaoDetailPage({
       number: it.number,
       installmentsCount: it.installments_count,
       purchaseDate: it.purchase_date,
+      category: categories.get(it.transaction_id) ?? null,
       deleted,
     });
   }
