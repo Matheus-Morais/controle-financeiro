@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { currentReferenceMonth, formatMonthLabel } from "@/lib/date";
 import { sessionTimezone } from "@/lib/user-time";
@@ -54,6 +55,7 @@ export default async function OrcamentoPage() {
             <div className="flex-1">
               <BudgetRow
                 categoryId={c.id}
+                month={refMonth}
                 name={c.name}
                 color={c.color ?? "#94a3b8"}
                 spentCents={spending.get(c.id) ?? 0}
@@ -69,9 +71,12 @@ export default async function OrcamentoPage() {
       </div>
 
       {spending.get("none") ? (
-        <p className="text-center text-xs text-neutral-400">
+        <Link
+          href={`/categorias/sem-categoria?mes=${refMonth}`}
+          className="text-center text-xs text-neutral-400 underline-offset-2 hover:underline"
+        >
           Sem categoria neste mês: <Money cents={spending.get("none") ?? 0} />
-        </p>
+        </Link>
       ) : null}
 
       <div className="border-t border-neutral-100 pt-4 dark:border-neutral-800">
