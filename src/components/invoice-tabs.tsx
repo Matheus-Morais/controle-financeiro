@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { Money } from "@/components/money";
 import { formatDayMonth } from "@/lib/date";
+import type { ItemCategory } from "@/lib/invoice-categories";
 import { sortInvoiceItems } from "@/lib/invoice-items";
 import { ConvertToRecurringButton } from "@/components/convert-to-recurring-button";
 import { DeleteInstallmentButton } from "@/components/delete-installment-button";
@@ -17,11 +18,16 @@ export interface InvoiceItem {
   number: number;
   installmentsCount: number;
   purchaseDate: string;
+  /** Categoria do gasto; `null` quando não foi classificado. */
+  category: ItemCategory | null;
   /** Parcela "excluída" (soft-delete): aparece esmaecida e no fim da lista. */
   deleted: boolean;
 }
 
 type TabKey = "installment" | "recurring" | "single";
+
+/** Mesmo cinza que o gerenciador de categorias usa quando a categoria não tem cor. */
+const FALLBACK_COLOR = "#94a3b8";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "installment", label: "Parcelado" },
@@ -90,6 +96,15 @@ export function InvoiceTabs({
                       {item.description}
                     </p>
                     <p className="text-xs text-neutral-500">
+                      <span className="inline-flex items-center gap-1 align-middle">
+                        <span
+                          aria-hidden
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: item.category?.color ?? FALLBACK_COLOR }}
+                        />
+                        {item.category?.name ?? "Sem categoria"}
+                      </span>
+                      {" · "}
                       {item.deleted && "Excluído · "}
                       {item.installmentsCount > 1 && (
                         <>
