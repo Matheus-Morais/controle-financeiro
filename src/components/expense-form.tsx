@@ -1,10 +1,17 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
-import { CalendarDays, CreditCard, Tag } from "lucide-react";
+import { CalendarDays, CreditCard, Receipt, Tag } from "lucide-react";
 import { Select } from "@/components/select";
-import { categoryOptions, sourceOptions, type Option } from "@/components/form-options";
+import {
+  categoryOptions,
+  sourceOptions,
+  type CardOption,
+  type Option,
+} from "@/components/form-options";
 import { SubmitButton } from "@/components/submit-button";
+import { formatDayMonth, formatMonthLabel } from "@/lib/date";
+import { invoiceWithShift } from "@/lib/invoice-choice";
 import { formatCents, parseBRLToCents } from "@/lib/money";
 
 type ActionState = { error?: string } | undefined;
@@ -20,6 +27,10 @@ export interface ExpenseDefaults {
   installmentsCount: number;
   categoryId: string | null;
   purchaseDate: string;
+  /** Meses de desvio da fatura em relação à calculada pelo ciclo (0 = automática). */
+  invoiceShift: number;
+  /** Gasto que começa no meio do parcelamento: a fatura vem da importação e não se escolhe. */
+  invoiceLocked: boolean;
 }
 
 /** Formata centavos para o input pt-BR sem símbolo de moeda: 123456 → "1.234,56". */
@@ -44,7 +55,7 @@ export function ExpenseForm({
   defaultCardId,
 }: {
   action: Action;
-  cards: Option[];
+  cards: CardOption[];
   accounts: Option[];
   categories: Option[];
   today: string;
@@ -71,6 +82,27 @@ export function ExpenseForm({
           : "");
   const [source, setSource] = useState(defaultSource);
   const selectedSource = sourceOptions(cards, accounts).find((option) => option.value === source);
+
+  // Data controlada: a fatura calculada depende dela.
+  const [purchaseDate, setPurchaseDate] = useState(expense?.purchaseDate ?? today);
+  const [invoiceShift, setInvoiceShift] = useState(expense?.invoiceShift ?? 0);
+
+  // A fatura só se escolhe em cartão, com data válida e fora do meio de um
+  // parcelamento importado (RN-57).
+  const card = source.startsWith("card:")
+    ? cards.find((c) => `card:${c.id}` === source)
+    : undefined;
+  const canPickInvoice =
+    card != null && /^\d{4}-\d{2}-\d{2}$/.test(purchaseDate) && !expense?.invoiceLocked;
+  const invoiceChoices = useMemo(() => {
+    if (!card || !canPickInvoice) return [];
+    const cycle = { closingDay: card.closing_day, dueDay: card.due_day };
+    // A vizinhança cobre a variação do fechamento; um desvio salvo maior (gasto
+    // antigo) entra na lista para não ser desfeito sem querer ao editar.
+    const shifts = [...new Set([-1, 0, 1, invoiceShift])].sort((a, b) => a - b);
+    return shifts.map((shift) => ({ shift, ref: invoiceWithShift(purchaseDate, cycle, shift) }));
+  }, [card, canPickInvoice, purchaseDate, invoiceShift]);
+  const chosenInvoice = invoiceChoices.find((c) => c.shift === invoiceShift)?.ref;
 
   return (
     <form action={formAction} className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
@@ -121,7 +153,8 @@ export function ExpenseForm({
             name="purchase_date"
             type="date"
             required
-            defaultValue={expense?.purchaseDate ?? today}
+            value={purchaseDate}
+            onChange={(e) => setPurchaseDate(e.target.value)}
             className={INPUT}
           />
         </label>
@@ -136,12 +169,47 @@ export function ExpenseForm({
           <Select
             name="source"
             value={source}
-            onChange={setSource}
+            onChange={(value) => {
+              setSource(value);
+              // O desvio é relativo ao ciclo do cartão: outro cartão volta ao automático.
+              setInvoiceShift(0);
+            }}
             title="Onde foi o gasto"
             ariaLabel="Onde"
             options={sourceOptions(cards, accounts)}
           />
         </label>
+
+        {canPickInvoice && chosenInvoice && (
+          <div className="flex flex-col gap-1.5">
+            <span className={FIELD_LABEL}>
+              <Receipt size={13} /> Fatura
+            </span>
+            <Select
+              value={String(invoiceShift)}
+              onChange={(value) => setInvoiceShift(Number(value))}
+              title="Em qual fatura entra"
+              ariaLabel="Fatura"
+              options={invoiceChoices.map(({ shift, ref }) => ({
+                value: String(shift),
+                label: formatMonthLabel(ref.referenceMonth),
+                hint: `${shift === 0 ? "automática · " : ""}vence ${formatDayMonth(ref.dueDate)}`,
+              }))}
+            />
+            {/* Vazio = o app calcula pelo fechamento do cartão (RN-57). */}
+            <input
+              type="hidden"
+              name="invoice_month"
+              value={invoiceShift === 0 ? "" : chosenInvoice.referenceMonth}
+            />
+            <span className="text-xs text-neutral-500">
+              {invoiceShift === 0
+                ? `Pelo cadastro, essa fatura fecha em ${formatDayMonth(chosenInvoice.closingDate)}. `
+                : "Escolhida por você. "}
+              A data da compra não muda.
+            </span>
+          </div>
+        )}
 
         <fieldset className="flex flex-col gap-1.5">
           <legend className={FIELD_LABEL}>Forma de pagamento</legend>

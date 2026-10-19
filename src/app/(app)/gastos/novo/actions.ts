@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { expenseSchema, parseSource } from "@/lib/schemas";
 import { generateInstallments } from "@/lib/installments";
 import { ACCOUNT_CLOSING_DAY, invoiceRefForMonth, clampDay, toISO, ymd } from "@/lib/invoice";
+import { invoiceShift } from "@/lib/invoice-choice";
 import { assertOwned } from "@/lib/ownership";
 
 type ActionState = { error?: string } | undefined;
@@ -44,11 +45,19 @@ export async function createExpense(_prev: ActionState, formData: FormData): Pro
   const categoryId = await assertOwned(supabase, "categories", e.category_id || null);
   if (e.category_id && !categoryId) return { error: "Categoria não encontrada." };
 
+  // Fatura escolhida à mão (só cartão): a data da compra continua verdadeira e as
+  // parcelas seguintes acompanham a escolhida (RN-57).
+  const chosenMonth = source.kind === "card" && e.invoice_month ? e.invoice_month : undefined;
+  if (chosenMonth && invoiceShift(e.purchase_date, closingDay, chosenMonth) === null) {
+    return { error: "Fatura muito distante da data da compra." };
+  }
+
   const parcels = generateInstallments({
     totalAmountCents: e.amount_cents,
     count,
     purchaseDate: e.purchase_date,
     closingDay,
+    anchorMonth: chosenMonth,
   });
 
   // Parcelas. Contas (origem conta) guardam o vencimento (due_date) no dia da
