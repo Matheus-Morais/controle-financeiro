@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { parseBRLToCents } from "@/lib/money";
 import { Money } from "@/components/money";
 import { Spinner } from "@/components/loader";
@@ -8,12 +10,15 @@ import { saveBudget } from "@/app/(app)/orcamento/actions";
 
 export function BudgetRow({
   categoryId,
+  month,
   name,
   color,
   spentCents,
   initialLimitCents,
 }: {
   categoryId: string;
+  /** Competência exibida (`YYYY-MM-01`) — o detalhe da categoria abre no mesmo mês. */
+  month: string;
   name: string;
   color: string;
   spentCents: number;
@@ -46,10 +51,14 @@ export function BudgetRow({
   return (
     <div className="rounded-xl bg-white p-3 shadow-sm dark:bg-neutral-900">
       <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-2 font-medium">
-          <span className="h-3 w-3 rounded-full" style={{ backgroundColor: color }} />
-          {name}
-        </span>
+        <Link
+          href={`/categorias/${categoryId}?mes=${month}`}
+          className="flex min-w-0 items-center gap-2 font-medium"
+        >
+          <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+          <span>{name}</span>
+          <ChevronRight size={14} className="shrink-0 text-neutral-400" />
+        </Link>
         <div className="flex items-center gap-1 text-sm">
           <span className="text-neutral-400">meta R$</span>
           <input
