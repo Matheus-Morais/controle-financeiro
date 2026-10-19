@@ -165,6 +165,85 @@ describe("updateExpense", () => {
     expect(redirect).toBe(`/cartoes/${CARD_ID}?mes=2025-03-01`);
   });
 
+  it("usa a fatura escolhida à mão e mantém a data da compra (RN-57)", async () => {
+    const captured = captureWrite();
+
+    const { redirect } = await run(() =>
+      updateExpense(
+        TX_ID,
+        undefined,
+        undefined,
+        // Compra em 05/03 cairia em março; o usuário manda para a fatura de fevereiro.
+        form({ ...VALID_EXPENSE, invoice_month: "2025-02-01" }),
+      ),
+    );
+
+    const installments = captured.args?.p_installments as Record<string, unknown>[];
+    const transaction = captured.args?.p_transaction as Record<string, unknown>;
+    const invoices = captured.args?.p_invoices as Record<string, unknown>[];
+
+    expect(installments.map((i) => i.reference_month)).toEqual([
+      "2025-02-01",
+      "2025-03-01",
+      "2025-04-01",
+    ]);
+    expect(transaction.purchase_date).toBe("2025-03-05");
+    expect(invoices.map((i) => i.reference_month)).toEqual([
+      "2025-02-01",
+      "2025-03-01",
+      "2025-04-01",
+    ]);
+    expect(redirect).toBe(`/cartoes/${CARD_ID}`);
+  });
+
+  it("recusa fatura muito distante da data da compra", async () => {
+    const captured = captureWrite();
+
+    const { result } = await run(() =>
+      updateExpense(
+        TX_ID,
+        undefined,
+        undefined,
+        form({ ...VALID_EXPENSE, invoice_month: "2026-03-01" }),
+      ),
+    );
+
+    expect(result?.error).toBe("Fatura muito distante da data da compra.");
+    expect(captured.args).toBeUndefined();
+  });
+
+  it("recusa mês de fatura mal formado", async () => {
+    const { result } = await run(() =>
+      updateExpense(
+        TX_ID,
+        undefined,
+        undefined,
+        form({ ...VALID_EXPENSE, invoice_month: "2025-13-01" }),
+      ),
+    );
+
+    expect(result?.error).toBe("Fatura inválida");
+  });
+
+  it("mantém a âncora do gasto que começa no meio do parcelamento, ignorando a escolha", async () => {
+    db.tables.installments[0].number = 3;
+    db.tables.installments[0].reference_month = "2025-03-01";
+    const captured = captureWrite();
+
+    await run(() =>
+      updateExpense(
+        TX_ID,
+        undefined,
+        undefined,
+        form({ ...VALID_EXPENSE, installments_count: "5", invoice_month: "2025-04-01" }),
+      ),
+    );
+
+    const installments = captured.args?.p_installments as Record<string, unknown>[];
+    expect(installments.map((i) => i.number)).toEqual([3, 4, 5]);
+    expect(installments[0].reference_month).toBe("2025-03-01");
+  });
+
   it("avisa na URL quando competências pagas foram descartadas", async () => {
     captureWrite(2);
 

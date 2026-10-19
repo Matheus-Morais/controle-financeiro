@@ -3,6 +3,7 @@ import { BackLink } from "@/components/back-link";
 import { createClient } from "@/lib/supabase/server";
 import { todayISO } from "@/lib/date";
 import { sessionTimezone } from "@/lib/user-time";
+import { invoiceShift } from "@/lib/invoice-choice";
 import { ExpenseForm, type ExpenseDefaults } from "@/components/expense-form";
 import { updateExpense } from "../actions";
 
@@ -17,8 +18,13 @@ export default async function EditarGastoPage({
   const { mes } = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: tx }, { data: cards }, { data: accounts }, { data: categories }] =
-    await Promise.all([
+  const [
+    { data: tx },
+    { data: cards },
+    { data: accounts },
+    { data: categories },
+    { data: firstParcel },
+  ] = await Promise.all([
       supabase
         .from("transactions")
         .select(
@@ -26,9 +32,21 @@ export default async function EditarGastoPage({
         )
         .eq("id", id)
         .single(),
-      supabase.from("cards").select("id, name, color").eq("active", true).order("created_at"),
+      supabase
+        .from("cards")
+        .select("id, name, color, closing_day, due_day")
+        .eq("active", true)
+        .order("created_at"),
       supabase.from("accounts").select("id, name, color").order("created_at"),
       supabase.from("categories").select("id, name, color").order("name"),
+      // 1ª parcela gravada: dela sai a fatura já escolhida e se o gasto começa no meio.
+      supabase
+        .from("installments")
+        .select("number, reference_month")
+        .eq("transaction_id", id)
+        .order("number")
+        .limit(1)
+        .maybeSingle(),
     ]);
 
   // Só editamos gastos à vista/parcelados; recorrentes são tratados em
@@ -48,6 +66,15 @@ export default async function EditarGastoPage({
     installmentsCount: tx.installments_count,
     categoryId: tx.category_id,
     purchaseDate: tx.purchase_date,
+    invoiceShift:
+      tx.card_id && firstParcel
+        ? (invoiceShift(
+            tx.purchase_date,
+            cards?.find((c) => c.id === tx.card_id)?.closing_day ?? 31,
+            firstParcel.reference_month,
+          ) ?? 0)
+        : 0,
+    invoiceLocked: (firstParcel?.number ?? 1) > 1,
   };
 
   const updateWithId = updateExpense.bind(null, id, mes);

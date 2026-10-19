@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { expenseSchema, parseSource } from "@/lib/schemas";
 import { generateInstallments } from "@/lib/installments";
 import { ACCOUNT_CLOSING_DAY, invoiceRefForMonth, clampDay, toISO, ymd } from "@/lib/invoice";
+import { invoiceShift } from "@/lib/invoice-choice";
 import { assertOwned } from "@/lib/ownership";
 
 type ActionState = { error?: string } | undefined;
@@ -138,13 +139,22 @@ export async function updateExpense(
   // data da compra. Parcelamento encurtado abaixo do início perde a âncora — o
   // cronograma 3..2 não existe — e é regerado do zero.
   const useAnchor = anchor != null && anchor.number > 1 && anchor.number <= count;
+
+  // Fatura escolhida à mão (RN-57). Gasto ancorado no meio do parcelamento ignora
+  // a escolha: a competência dele vem da fatura importada.
+  const chosenMonth =
+    source.kind === "card" && !useAnchor && e.invoice_month ? e.invoice_month : undefined;
+  if (chosenMonth && invoiceShift(e.purchase_date, closingDay, chosenMonth) === null) {
+    return { error: "Fatura muito distante da data da compra." };
+  }
+
   const parcels = generateInstallments({
     totalAmountCents: e.amount_cents,
     count,
     purchaseDate: e.purchase_date,
     closingDay,
     firstNumber: useAnchor ? anchor.number : 1,
-    anchorMonth: useAnchor ? anchor.reference_month : undefined,
+    anchorMonth: useAnchor ? anchor.reference_month : chosenMonth,
   });
 
   const purchaseDay = ymd(e.purchase_date)[2];

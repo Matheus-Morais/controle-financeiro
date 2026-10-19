@@ -7,6 +7,12 @@ export interface Option {
   color?: string | null;
 }
 
+/** Cartão com o ciclo, para o formulário mostrar em qual fatura a compra cai. */
+export interface CardOption extends Option {
+  closing_day: number;
+  due_day: number;
+}
+
 const FALLBACK_CARD_COLOR = "#16a34a";
 const FALLBACK_ACCOUNT_COLOR = "#64748b";
 const FALLBACK_CATEGORY_COLOR = "#94a3b8";

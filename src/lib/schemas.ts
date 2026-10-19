@@ -32,6 +32,15 @@ export const expenseSchema = z
     installments_count: z.coerce.number().int().min(1).max(72).default(1),
     category_id: z.string().uuid().optional().or(z.literal("")),
     purchase_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida"),
+    /**
+     * Fatura escolhida à mão (`YYYY-MM-01`) para a 1ª parcela no cartão. Vazio =
+     * a que o ciclo do cartão calcula (RN-57).
+     */
+    invoice_month: z
+      .string()
+      .regex(/^\d{4}-(0[1-9]|1[0-2])-01$/, "Fatura inválida")
+      .optional()
+      .or(z.literal("")),
     notes: z.string().trim().max(500).optional().or(z.literal("")),
   })
   .refine((v) => v.kind === "single" || v.installments_count >= 2, {

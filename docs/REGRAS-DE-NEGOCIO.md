@@ -104,6 +104,21 @@ falsearia o histórico.
 As competências das parcelas **não** são recalculadas — elas registram em que fatura a compra caiu
 segundo o ciclo vigente na época.
 
+### RN-57 — Fatura escolhida à mão
+O fechamento real varia (fim de semana, feriado, tamanho do mês) e o app guarda um dia fixo por
+cartão. Ao lançar ou editar um gasto no **cartão**, o usuário pode escolher a fatura da 1ª parcela:
+a calculada pelo ciclo (RN-11) ou um deslocamento de meses em relação a ela. Assim a **data da
+compra continua verdadeira** e só a competência muda.
+
+- O campo `invoice_month` (`YYYY-MM-01`) é opcional; vazio = fatura calculada. A UI oferece a anterior,
+  a automática e a seguinte; o servidor aceita até **6 meses** de desvio (`invoiceShift`).
+- As parcelas seguintes acompanham a escolhida (RN-17: competências consecutivas a partir da âncora).
+- Vale só para cartão. Conta não tem fatura (RN-15) e ignora o campo.
+- Gasto ancorado no meio do parcelamento (RN-42) ignora a escolha: a competência dele vem da fatura
+  importada. Nele o campo nem aparece.
+- Ao editar, o desvio já gravado vem pré-selecionado; sem isso, salvar a edição desfaria a escolha.
+- Pura: [`invoice-choice.ts`](../src/lib/invoice-choice.ts).
+
 ---
 
 ## 4. Gastos e parcelamento
