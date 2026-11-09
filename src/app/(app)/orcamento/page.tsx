@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { currentReferenceMonth, formatMonthLabel } from "@/lib/date";
+import { currentReferenceMonth, formatMonthLabel, todayISO } from "@/lib/date";
 import { sessionTimezone } from "@/lib/user-time";
-import { spendingByCategory } from "@/lib/reports";
+import { budgetSpendingByCategory } from "@/lib/category-month";
 import { Money } from "@/components/money";
 import { HideValuesToggle } from "@/components/hide-values-toggle";
 import { BudgetRow } from "@/components/budget-row";
@@ -12,12 +12,13 @@ import { createCategory, deleteCategory } from "./actions";
 
 export default async function OrcamentoPage() {
   const supabase = await createClient();
-  const refMonth = currentReferenceMonth(await sessionTimezone(supabase));
+  const tz = await sessionTimezone(supabase);
+  const refMonth = currentReferenceMonth(tz);
 
   const [{ data: categories }, { data: budgets }, spending] = await Promise.all([
     supabase.from("categories").select("id, name, color").order("name"),
     supabase.from("budgets").select("category_id, limit_cents").is("reference_month", null),
-    spendingByCategory(supabase, refMonth),
+    budgetSpendingByCategory(supabase, refMonth, todayISO(tz)),
   ]);
 
   const limitByCat = new Map((budgets ?? []).map((b) => [b.category_id, b.limit_cents]));

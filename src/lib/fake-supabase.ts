@@ -123,6 +123,11 @@ class QueryBuilder implements PromiseLike<{ data: Row[] | Row | null; error: nul
     return this;
   }
 
+  gt(col: string, value: unknown) {
+    this.filters.push((r) => cmp(r[col], value) > 0);
+    return this;
+  }
+
   lt(col: string, value: unknown) {
     this.filters.push((r) => cmp(r[col], value) < 0);
     return this;

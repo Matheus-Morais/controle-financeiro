@@ -301,6 +301,10 @@ Soma das parcelas com a chave `(card_id, reference_month)` **da própria fatura*
 Limite mensal **recorrente** por categoria (`reference_month = null` = vale todo mês). Limite ≤ 0
 remove o orçamento. O schema suporta orçamento por mês específico, mas a UI só expõe o recorrente.
 
+O total e o detalhe seguem a competência do lançamento. Contas fora do cartão e parcelas de
+compras parceladas entram desde o início da competência. Compras à vista e assinaturas de
+cartão entram a partir do fechamento da fatura, usando o fuso do usuário.
+
 A unicidade é garantida pelo banco: índice único em `(user_id, category_id, reference_month)` com
 **`nulls not distinct`** — essencial porque `category_id` null é o orçamento *geral* e
 `reference_month` null é o *recorrente*, justamente os casos que mais duplicavam. A gravação é

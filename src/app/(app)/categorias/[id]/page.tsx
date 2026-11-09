@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { SearchX } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { currentReferenceMonth, formatDayMonth, formatMonthLabel } from "@/lib/date";
+import { currentReferenceMonth, formatDayMonth, formatMonthLabel, todayISO } from "@/lib/date";
 import { sessionTimezone } from "@/lib/user-time";
 import { categoryMonthItems, totalsByOrigin } from "@/lib/category-month";
 import { sortInvoiceItems } from "@/lib/invoice-items";
@@ -21,8 +21,7 @@ const UNCATEGORIZED = "sem-categoria";
 /**
  * Detalhe de uma categoria num mês: o quê, quanto e em qual cartão (ou conta).
  *
- * Usa a competência (`reference_month`) e ignora parcelas excluídas, igual ao
- * "Gasto" do orçamento — a soma aqui bate com o que a linha da categoria mostra.
+ * Usa a mesma seleção de lançamentos do orçamento (RN-36).
  */
 export default async function CategoriaPage({
   params,
@@ -57,7 +56,7 @@ export default async function CategoriaPage({
         : Promise.resolve({ data: null }),
       supabase.from("cards").select("id, name, color"),
       supabase.from("accounts").select("id, name, color"),
-      categoryMonthItems(supabase, categoryId, refMonth),
+      categoryMonthItems(supabase, refMonth, todayISO(tz), categoryId),
     ]);
   if (!category) notFound();
 
@@ -109,7 +108,7 @@ export default async function CategoriaPage({
           </div>
         )}
         <p className="mt-2 text-xs text-neutral-600 dark:text-neutral-400">
-          Compras no cartão entram na referência da fatura.
+          Parcelamentos entram desde o início da referência. Os demais gastos no cartão entram quando a fatura fecha.
         </p>
       </div>
 
