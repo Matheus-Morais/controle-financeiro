@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { SearchX } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { currentReferenceMonth, formatDayMonth } from "@/lib/date";
+import { currentReferenceMonth, formatDayMonth, formatMonthLabel } from "@/lib/date";
 import { sessionTimezone } from "@/lib/user-time";
 import { categoryMonthItems, totalsByOrigin } from "@/lib/category-month";
 import { sortInvoiceItems } from "@/lib/invoice-items";
@@ -90,7 +90,7 @@ export default async function CategoriaPage({
 
       <div className="rounded-2xl bg-white p-4 shadow-sm dark:bg-neutral-900">
         <p className="text-xs text-neutral-500">
-          Gasto no mês · {items.length} {items.length === 1 ? "lançamento" : "lançamentos"}
+          Gasto na referência · {items.length} {items.length === 1 ? "lançamento" : "lançamentos"}
         </p>
         <p className="text-3xl font-bold">
           <Money cents={total} className={over ? "text-red-500" : ""} />
@@ -108,17 +108,20 @@ export default async function CategoriaPage({
             />
           </div>
         )}
+        <p className="mt-2 text-xs text-neutral-600 dark:text-neutral-400">
+          Compras no cartão entram na referência da fatura.
+        </p>
       </div>
 
       {items.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-12 text-center">
           <SearchX size={28} className="text-neutral-300" />
-          <p className="text-sm text-neutral-500">Nenhum gasto nesta categoria neste mês.</p>
+          <p className="text-sm text-neutral-500">Nenhum gasto nesta categoria na referência selecionada.</p>
         </div>
       ) : (
         <>
           <section className="flex flex-col gap-2">
-            <h2 className="text-sm font-semibold text-neutral-500">Por cartão</h2>
+            <h2 className="text-sm font-semibold text-neutral-500">Por cartão ou conta</h2>
             <ul className="flex flex-col gap-1 rounded-2xl bg-white p-2 shadow-sm dark:bg-neutral-900">
               {origins.map((o) => {
                 const origin = originOf(o.cardId, o.accountId);
@@ -128,9 +131,19 @@ export default async function CategoriaPage({
                       className="h-3 w-3 shrink-0 rounded-full"
                       style={{ backgroundColor: origin?.color ?? FALLBACK_COLOR }}
                     />
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                      {origin?.name ?? "—"}
-                      <span className="ml-1.5 text-xs font-normal text-neutral-400">
+                    <span className="min-w-0 flex-1">
+                      {o.cardId && origin ? (
+                        <Link
+                          href={`/cartoes/${o.cardId}?mes=${refMonth}`}
+                          className="block w-fit max-w-full truncate text-sm font-medium underline underline-offset-2"
+                        >
+                          {origin.name}
+                          <span className="sr-only"> · Ver fatura de {formatMonthLabel(refMonth).toLowerCase()}</span>
+                        </Link>
+                      ) : (
+                        <span className="block truncate text-sm font-medium">{origin?.name ?? "—"}</span>
+                      )}
+                      <span className="block text-xs text-neutral-600 dark:text-neutral-400">
                         {o.count} {o.count === 1 ? "lançamento" : "lançamentos"}
                       </span>
                     </span>
@@ -142,8 +155,8 @@ export default async function CategoriaPage({
           </section>
 
           <section className="flex flex-col gap-2">
-            <h2 className="text-sm font-semibold text-neutral-500">Lançamentos</h2>
-            <ul className="grid gap-2 lg:grid-cols-2">
+            <h2 className="text-sm font-semibold text-neutral-500">Lançamentos da referência</h2>
+            <ul className="grid grid-cols-1 gap-2 lg:grid-cols-2">
               {sorted.map((it) => {
                 const origin = originOf(it.cardId, it.accountId);
                 return (
