@@ -51,19 +51,31 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detectar alterações nas migrations
+        id: migrations
+        run: |
+          # No pull_request, o primeiro pai do merge é a base do PR.
+          changed="$(git diff --name-only HEAD^1 HEAD -- supabase/migrations/)"
+          if [[ -n "$changed" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: supabase/setup-cli@v1
+        if: steps.migrations.outputs.changed == 'true' && env.SUPABASE_ACCESS_TOKEN != ''
         with:
           version: latest
 
       # Pré-requisito: configure os 3 secrets no GitHub → Settings → Secrets → Actions:
       #   SUPABASE_ACCESS_TOKEN  → token pessoal (supabase.com/dashboard/account/tokens)
-      #   SUPABASE_DB_PASSWORD   → senha do banco de staging
-      #   SUPABASE_PROJECT_ID    → ref do projeto de staging (ex.: abcdefghijklmnop)
+      #   SUPABASE_DB_PASSWORD   → senha do banco vinculado
+      #   SUPABASE_PROJECT_ID    → ref do projeto vinculado
       # O `secrets` não pode ser usado em `if`; por isso o teste é feito
       # sobre a env var (mapeada no nível do job acima).
-      - name: Aplicar migrations no staging
-        if: env.SUPABASE_ACCESS_TOKEN != ''
+      - name: Validar migrations pendentes no Supabase
+        if: steps.migrations.outputs.changed == 'true' && env.SUPABASE_ACCESS_TOKEN != ''
         run: |
           supabase link --project-ref "$SUPABASE_PROJECT_ID"
-          supabase db push
+          supabase db push --remote --dry-run
