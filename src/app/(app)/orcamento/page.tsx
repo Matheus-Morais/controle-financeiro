@@ -32,7 +32,7 @@ export default async function OrcamentoPage() {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold">Orçamento</h1>
-          <p className="text-sm text-neutral-500">{formatMonthLabel(refMonth)}</p>
+          <p className="text-sm text-neutral-500">Referência de {formatMonthLabel(refMonth).toLowerCase()}</p>
         </div>
         <HideValuesToggle className="-mr-2" />
       </div>
